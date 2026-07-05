@@ -33,37 +33,16 @@ HR работает в привычных **Google-таблицах** — ник
 
 ## 🔀 Как это работает
 
-```mermaid
-flowchart LR
-    subgraph SRC["Источники"]
-        HH["HH.ru API<br/>(отклики, чаты, стадии)"]
-        GS["Google Sheets<br/>(конфиг, шаблоны, база знаний)"]
-        GF["Google Forms<br/>(тестовое задание)"]
-    end
+<details>
+  <summary><b>Показать схему проекта</b></summary>
 
-    subgraph BOT["Ядро — Telegram-бот (TypeScript)"]
-        SCR["1. Скрининг резюме<br/>ИИ-оценка → балл"]
-        ANK["2. Тестовое задание<br/>ИИ-оценка анкеты"]
-        HR["3. Решение HR<br/>в таблице"]
-        SCHED["4. Собеседование<br/>согласование + календарь"]
-        ROUTER["ИИ-роутер чатов<br/>(каждые 60 сек)"]
-    end
+<br>
 
-    subgraph OUT["Люди"]
-        CAND["Кандидат"]
-        REC["HR / Telegram-группа"]
-    end
+<p align="center">
+  <img src="hh-ai-automation-scheme.png" alt="HH.ru automation project scheme" width="100%">
+</p>
 
-    HH --> SCR --> ANK --> HR --> SCHED
-    GS -.-> BOT
-    GF --> ANK
-    CAND <-->|чат HH| ROUTER
-    ROUTER -->|вопрос → база знаний| CAND
-    ROUTER -->|нет ответа| REC
-    ROUTER -->|про время| SCHED
-    SCHED -->|запись + напоминание| REC
-    SCR -->|шаблон| CAND
-```
+</details>
 
 ### Воронка по стадиям
 
