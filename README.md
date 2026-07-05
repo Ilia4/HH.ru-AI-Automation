@@ -39,7 +39,7 @@ HR работает в привычных **Google-таблицах** — ник
 <br>
 
 <p align="center">
-  <img src="hh-ai-automation-scheme.png" alt="HH.ru automation project scheme" width="100%">
+  <img src="docs/hh-ai-automation-scheme.png" alt="HH.ru automation project scheme" width="100%">
 </p>
 
 </details>
