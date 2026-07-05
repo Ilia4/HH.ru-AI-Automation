@@ -1,0 +1,25 @@
+node_modules
+dist
+
+# ─── Секреты — НИКОГДА не коммитить ─────────────────────────
+.env
+.env.local
+hh-tokens.json
+google-credentials.json
+
+# ─── Локальное состояние / рантайм ──────────────────────────
+period-stats.json
+topics.json
+chat-router-state.json
+interview-chat-state.json
+chat-sim-state.json
+hh-refresh.lock
+*.log
+
+# ─── Бэкапы и временные архивы ──────────────────────────────
+src.bak_*/
+*.tgz
+*.tar.gz
+
+# ─── Prisma generated ───────────────────────────────────────
+/src/generated/prisma

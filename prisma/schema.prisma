@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id Int @id @default(autoincrement())
+
+  tgUserId String  @unique
+  username String? @unique
+
+  firstName      String?
+  lastName       String?
+  fullNameFromGS String?
+  email          String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activeVacancies         ActiveVacancy[]
+  interviewNotifications InterviewNotification[]
+}
+
+model InterviewNotification {
+  id Int @id @default(autoincrement())
+
+  eventKey String @unique
+
+  vacancyName       String
+  candidateFullName String
+  resumeUrl         String?
+
+  interviewAt DateTime
+  reminderAt  DateTime
+
+  contactCandidate String?
+
+  activeVacancyId Int?
+  activeVacancy   ActiveVacancy? @relation(fields: [activeVacancyId], references: [id])
+
+  responsibleUsername String
+
+  responsibleUserId Int?
+  responsibleUser   User? @relation(fields: [responsibleUserId], references: [id])
+
+  sheetRow  Int?
+  sheetName String?
+
+  firstNotificationSentAt DateTime?
+  reminder30SentAt        DateTime?
+
+  status String @default("active")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ActiveVacancy {
+  id Int @id @default(autoincrement())
+
+  vacancyName String @unique
+  vacancyUrl  String?
+  templatesUrl String?
+  responsibleUsername String
+
+  responsibleUserId Int?
+  responsibleUser   User? @relation(fields: [responsibleUserId], references: [id])
+
+  isActive Boolean @default(true)
+
+  responsibleNotifiedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  interviewNotifications InterviewNotification[]
+}
