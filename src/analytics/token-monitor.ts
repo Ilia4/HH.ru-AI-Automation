@@ -48,6 +48,7 @@ function saveState(state: MonitorState) {
 }
 
 async function sendToGeneral(bot: Bot, text: string): Promise<void> {
+    if (process.env.HH_AUTH_ALERTS === "false") return;
     const groupId = process.env.GROUP_CHAT_ID;
     if (!groupId) return;
     try {
