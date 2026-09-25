@@ -1,5 +1,21 @@
 import { Bot } from "grammy";
 import { prisma } from "../lib/prisma.js";
+import { buildCandidateCard, escapeTelegramHtml, resumeLinkHtml } from "../hhru/telegram-cards";
+
+const INTERVIEW_TIME_ZONE = "Europe/Moscow";
+
+/** В БД хранится абсолютный UTC-момент, а HR всегда должен видеть московское время. */
+export function formatInterviewDateMoscow(value: Date): string {
+    return value.toLocaleDateString("ru-RU", { timeZone: INTERVIEW_TIME_ZONE });
+}
+
+export function formatInterviewTimeMoscow(value: Date): string {
+    return value.toLocaleTimeString("ru-RU", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: INTERVIEW_TIME_ZONE,
+    });
+}
 
 // Группируем массив объектов по ключу
 function groupBy<T>(items: T[], key: (item: T) => number): Map<number, T[]> {
@@ -37,15 +53,15 @@ export async function sendNewVacancyNotifications(bot: Bot) {
         if (userVacancies.length === 1) {
             const v = userVacancies[0];
             lines.push(`🎯 <b>Вас назначили ответственным за вакансию</b>`, ``);
-            lines.push(`<b>Вакансия:</b> ${v.vacancyName}`);
-            if (v.vacancyUrl) lines.push(`<b>Ссылка:</b> ${v.vacancyUrl}`);
-            if (v.templatesUrl) lines.push(`<b>Шаблоны:</b> ${v.templatesUrl}`);
+            lines.push(`<b>Вакансия:</b> ${escapeTelegramHtml(v.vacancyName)}`);
+            if (v.vacancyUrl) lines.push(`<b>Ссылка:</b> ${escapeTelegramHtml(v.vacancyUrl)}`);
+            if (v.templatesUrl) lines.push(`<b>Шаблоны:</b> ${escapeTelegramHtml(v.templatesUrl)}`);
         } else {
             lines.push(`🎯 <b>Вас назначили ответственным за ${userVacancies.length} вакансии</b>`, ``);
             for (const v of userVacancies) {
-                lines.push(`• <b>${v.vacancyName}</b>`);
-                if (v.vacancyUrl) lines.push(`  Ссылка: ${v.vacancyUrl}`);
-                if (v.templatesUrl) lines.push(`  Шаблоны: ${v.templatesUrl}`);
+                lines.push(`• <b>${escapeTelegramHtml(v.vacancyName)}</b>`);
+                if (v.vacancyUrl) lines.push(`  Ссылка: ${escapeTelegramHtml(v.vacancyUrl)}`);
+                if (v.templatesUrl) lines.push(`  Шаблоны: ${escapeTelegramHtml(v.templatesUrl)}`);
                 lines.push(``);
             }
         }
@@ -91,26 +107,36 @@ export async function sendNewInterviewNotifications(bot: Bot) {
 
         if (notifications.length === 1) {
             const n = notifications[0];
-            const date = n.interviewAt.toLocaleDateString("ru-RU");
-            const time = n.interviewAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+            const date = formatInterviewDateMoscow(n.interviewAt);
+            const time = formatInterviewTimeMoscow(n.interviewAt);
 
-            lines.push(`📋 <b>Назначено собеседование</b>`, ``);
-            lines.push(`<b>Вакансия:</b> ${n.vacancyName}`);
-            lines.push(`<b>Кандидат:</b> ${n.candidateFullName}`);
-            lines.push(`<b>Дата:</b> ${date}`);
-            lines.push(`<b>Время:</b> ${time}`);
-            if (n.resumeUrl) lines.push(`<b>Резюме:</b> ${n.resumeUrl}`);
-            if (n.contactCandidate) lines.push(`<b>Связь с кандидатом:</b> ${n.contactCandidate}`);
+            const card = buildCandidateCard({
+                header: "📋 НАЗНАЧЕНО СОБЕСЕДОВАНИЕ",
+                candidateName: n.candidateFullName,
+                vacancyName: n.vacancyName,
+                stage: "Собеседование",
+                fields: [
+                    { icon: "🗓", label: "Дата", value: date },
+                    { icon: "🕐", label: "Время", value: time },
+                    ...(n.contactCandidate ? [{ icon: "☎️", label: "Связь", value: n.contactCandidate }] : []),
+                ],
+            });
+            lines.push(card);
+            const resume = resumeLinkHtml(n.resumeUrl);
+            if (resume) lines.push(``, resume);
         } else {
             lines.push(`📋 <b>Назначено ${notifications.length} собеседования</b>`, ``);
             for (const n of notifications) {
-                const date = n.interviewAt.toLocaleDateString("ru-RU");
-                const time = n.interviewAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+                const date = formatInterviewDateMoscow(n.interviewAt);
+                const time = formatInterviewTimeMoscow(n.interviewAt);
 
-                lines.push(`• <b>${n.vacancyName}</b> — ${n.candidateFullName}`);
+                lines.push(`👤 <b>${escapeTelegramHtml(n.candidateFullName)}</b>`);
+                lines.push(`  💼 ${escapeTelegramHtml(n.vacancyName)}`);
                 lines.push(`  📅 ${date} в ${time}`);
-                if (n.resumeUrl) lines.push(`  Резюме: ${n.resumeUrl}`);
-                if (n.contactCandidate) lines.push(`  Связь: ${n.contactCandidate}`);
+                lines.push(`  📍 Этап кандидата: Собеседование`);
+                if (n.contactCandidate) lines.push(`  ☎️ ${escapeTelegramHtml(n.contactCandidate)}`);
+                const resume = resumeLinkHtml(n.resumeUrl);
+                if (resume) lines.push(`  ${resume}`);
                 lines.push(``);
             }
         }
@@ -157,19 +183,32 @@ export async function send30MinReminders(bot: Bot) {
 
         if (notifications.length === 1) {
             const n = notifications[0];
-            const time = n.interviewAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+            const time = formatInterviewTimeMoscow(n.interviewAt);
 
-            lines.push(`⏰ <b>Через 30 минут собеседование</b>`, ``);
-            lines.push(`<b>Вакансия:</b> ${n.vacancyName}`);
-            lines.push(`<b>Кандидат:</b> ${n.candidateFullName}`);
-            lines.push(`<b>Время:</b> ${time}`);
-            if (n.contactCandidate) lines.push(`<b>Связь с кандидатом:</b> ${n.contactCandidate}`);
+            const card = buildCandidateCard({
+                header: "⏰ СОБЕСЕДОВАНИЕ ЧЕРЕЗ 30 МИНУТ",
+                candidateName: n.candidateFullName,
+                vacancyName: n.vacancyName,
+                stage: "Собеседование",
+                fields: [
+                    { icon: "🕐", label: "Время", value: time },
+                    ...(n.contactCandidate ? [{ icon: "☎️", label: "Связь", value: n.contactCandidate }] : []),
+                ],
+            });
+            lines.push(card);
+            const resume = resumeLinkHtml(n.resumeUrl);
+            if (resume) lines.push(``, resume);
         } else {
             lines.push(`⏰ <b>Через 30 минут ${notifications.length} собеседования</b>`, ``);
             for (const n of notifications) {
-                const time = n.interviewAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-                lines.push(`• <b>${n.vacancyName}</b> — ${n.candidateFullName} в ${time}`);
-                if (n.contactCandidate) lines.push(`  Связь: ${n.contactCandidate}`);
+                const time = formatInterviewTimeMoscow(n.interviewAt);
+                lines.push(`👤 <b>${escapeTelegramHtml(n.candidateFullName)}</b>`);
+                lines.push(`  💼 ${escapeTelegramHtml(n.vacancyName)}`);
+                lines.push(`  🕐 ${time}`);
+                lines.push(`  📍 Этап кандидата: Собеседование`);
+                if (n.contactCandidate) lines.push(`  ☎️ ${escapeTelegramHtml(n.contactCandidate)}`);
+                const resume = resumeLinkHtml(n.resumeUrl);
+                if (resume) lines.push(`  ${resume}`);
                 lines.push(``);
             }
         }

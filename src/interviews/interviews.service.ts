@@ -8,7 +8,9 @@ function parseInterviewDateTime(date: string, time: string): Date | null {
 
     const [day, month, year] = normalizedDate.split(".").map(Number);
     const [hours, minutes] = normalizedTime.split(":").map(Number);
-    const dt = new Date(year, month - 1, day, hours, minutes, 0, 0);
+    // Время собеседования в таблице указано по Москве (UTC+3).
+    // Сохраняем корректный абсолютный момент в UTC (не зависит от TZ сервера).
+    const dt = new Date(Date.UTC(year, month - 1, day, hours - 3, minutes, 0, 0));
     return isNaN(dt.getTime()) ? null : dt;
 }
 

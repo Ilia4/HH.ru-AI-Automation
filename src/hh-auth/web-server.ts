@@ -1,48 +1,62 @@
 import express from "express";
 import type { Bot } from "grammy";
-import { exchangeCodeForTokens } from "./hh-auth.service";
+import { exchangeCodeForAccount } from "./hh-auth.service";
+import { consumeOAuthSession } from "./accounts.service";
 
 const PORT = Number(process.env.OAUTH_PORT) || 3000;
+
+function htmlEscape(value: unknown): string {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
 
 export function startOAuthServer(bot: Bot) {
     const app = express();
 
     app.get("/callback", async (req, res) => {
-        const code = req.query.code as string | undefined;
-        const state = req.query.state as string | undefined; // chat_id админа
-        const error = req.query.error as string | undefined;
+        const code = typeof req.query.code === "string" ? req.query.code : "";
+        const state = typeof req.query.state === "string" ? req.query.state : "";
+        const error = typeof req.query.error === "string" ? req.query.error : "";
 
         if (error) {
             console.error("[hh-auth] callback error:", error, req.query.error_description);
-            res.status(400).send(`<h2>Ошибка авторизации: ${error}</h2>`);
+            res.status(400).send(`<h2>Ошибка авторизации: ${htmlEscape(error)}</h2>`);
+            return;
+        }
+        if (!code || !state) {
+            res.status(400).send("<h2>Ссылка авторизации неполная или устарела. Вернитесь в Telegram и нажмите «Добавить аккаунт» ещё раз.</h2>");
             return;
         }
 
-        if (!code) {
-            res.status(400).send("<h2>Нет кода авторизации</h2>");
+        const session = await consumeOAuthSession(state);
+        if (!session) {
+            res.status(400).send("<h2>Ссылка авторизации истекла или уже использована. Вернитесь в Telegram и создайте новую.</h2>");
             return;
         }
 
         try {
-            await exchangeCodeForTokens(code);
-            console.log("[hh-auth] авторизация успешна");
-            res.send("<h2>✅ Авторизация HH.ru успешна! Можно закрыть вкладку и вернуться в Telegram.</h2>");
-
-            if (state) {
-                try {
-                    await bot.api.sendMessage(state, "✅ Авторизация HH.ru прошла успешно. Токен сохранён.");
-                } catch (e) {
-                    console.error("[hh-auth] не смог уведомить в telegram:", e);
-                }
-            }
+            const account = await exchangeCodeForAccount(code, session.telegramUserId);
+            console.log(`[hh-auth] аккаунт добавлен: ${account.email} (${account.id})`);
+            res.send(`<h2>✅ Аккаунт HH.ru ${htmlEscape(account.email)} подключён! Можно закрыть вкладку и вернуться в Telegram.</h2>`);
+            await bot.api.sendMessage(
+                session.telegramChatId,
+                [
+                    "✅ Аккаунт HH.ru подключён.",
+                    `Почта: ${account.email}`,
+                    account.employerName ? `Работодатель: ${account.employerName}` : "",
+                    "",
+                    "Он начнёт обрабатывать вакансии, где эта почта указана в колонке «Аккаунт HH».",
+                ].filter(Boolean).join("\n"),
+            );
         } catch (err: any) {
             console.error("[hh-auth] ошибка обмена кода:", err.message);
-            res.status(500).send(`<h2>Ошибка при получении токена: ${err.message}</h2>`);
-            if (state) {
-                try {
-                    await bot.api.sendMessage(state, `❌ Ошибка авторизации HH.ru: ${err.message}`);
-                } catch {}
-            }
+            res.status(500).send(`<h2>Ошибка при подключении аккаунта: ${htmlEscape(err.message)}</h2>`);
+            try {
+                await bot.api.sendMessage(session.telegramChatId, `❌ Ошибка подключения HH.ru: ${err.message}`);
+            } catch {}
         }
     });
 

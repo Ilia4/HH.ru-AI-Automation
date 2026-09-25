@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анкета кандидата</title>
+<style>
+  :root{
+    --bg:#f4f6fa;--surface:#fff;--line:#e2e7f0;--txt:#1b2233;--mut:#6b7488;
+    --blue:#3d7bfd;--ok:#12a06a;--err:#d9455a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--txt)}
+  .wrap{max-width:720px;margin:0 auto;padding:28px 16px 64px}
+  .head{background:var(--surface);border:1px solid var(--line);border-top:5px solid var(--blue);border-radius:14px;padding:24px;margin-bottom:16px}
+  h1{font-size:23px;margin:0 0 8px;line-height:1.3}
+  .desc{color:var(--mut);white-space:pre-wrap}
+  .vac{display:inline-block;margin-top:10px;background:#eaf1ff;color:#2b5fd0;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600}
+  .hello{margin-top:14px;padding:12px 14px;background:#eefaf3;border:1px solid #c9ecd9;border-radius:10px;color:#12a06a;font-size:14px}
+  .hello b{color:#0b7a51}
+  .q{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:13px}
+  .q.invalid{border-color:var(--err)}
+  .q-title{font-weight:600;margin-bottom:4px}
+  .req{color:var(--err);margin-left:3px}
+  .q-hint{color:var(--mut);font-size:13px;margin-bottom:12px}
+  input[type=text],input[type=tel],input[type=number],textarea{
+    width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font:inherit;color:var(--txt);background:#fbfcfe}
+  textarea{min-height:110px;resize:vertical}
+  input:focus,textarea:focus{outline:0;border-color:var(--blue);background:#fff}
+  .opt{display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;background:#fbfcfe}
+  .opt:hover{border-color:#c3d0e6}
+  .opt input{margin-top:3px;accent-color:var(--blue);width:17px;height:17px;flex:none}
+  .scale{display:flex;flex-wrap:wrap;gap:7px}
+  .scale label{flex:1;min-width:42px;text-align:center;border:1px solid var(--line);border-radius:9px;padding:9px 0;cursor:pointer;background:#fbfcfe;font-weight:600}
+  .scale input{display:none}
+  .scale input:checked + span{color:#fff}
+  .scale label:has(input:checked){background:var(--blue);border-color:var(--blue);color:#fff}
+  .consent{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;display:flex;gap:11px;align-items:flex-start}
+  .consent input{margin-top:3px;width:18px;height:18px;accent-color:var(--blue);flex:none}
+  .consent label{font-size:13px;color:var(--mut);line-height:1.55}
+  button{width:100%;padding:14px;border:0;border-radius:11px;background:var(--blue);color:#fff;font:inherit;font-weight:700;font-size:16px;cursor:pointer}
+  button:hover{filter:brightness(1.06)}
+  button:disabled{opacity:.55;cursor:wait}
+  .msg{padding:13px 16px;border-radius:11px;margin-bottom:14px;font-weight:600}
+  .msg.err{background:#fdeaed;color:var(--err);border:1px solid #f6ccd4}
+  .state{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:44px 24px;text-align:center}
+  .state .big{font-size:44px;margin-bottom:12px}
+  .state h2{margin:0 0 8px;font-size:21px}
+  .state p{color:var(--mut);margin:0}
+  .foot{text-align:center;color:var(--mut);font-size:12px;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+  <div class="state"><p>Загружаем анкету…</p></div>
+</div>
+<script>
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const root = document.getElementById('root');
+const parts = location.pathname.split('/').filter(Boolean);
+const publicId = parts.pop();
+// база публичной части: /anketa/<id> → /anketa ; работает и если путь изменят
+const API = '/' + parts.join('/') + '/api/form/';
+const token = new URLSearchParams(location.search).get('t') || '';
+let FORM = null;
+
+function stateBox(icon, title, text) {
+  root.innerHTML = `<div class="state"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
+}
+
+function questionHtml(q, i) {
+  const req = q.required ? '<span class="req">*</span>' : '';
+  const hint = q.hint ? `<div class="q-hint">${esc(q.hint)}</div>` : '';
+  let body = '';
+  if (q.type === 'long') body = `<textarea data-q="${esc(q.id)}" placeholder="Ваш ответ"></textarea>`;
+  else if (q.type === 'number') body = `<input type="number" data-q="${esc(q.id)}" placeholder="Число">`;
+  else if (q.type === 'one' || q.type === 'many') {
+    const kind = q.type === 'one' ? 'radio' : 'checkbox';
+    body = (q.options || []).map(o =>
+      `<label class="opt"><input type="${kind}" name="${esc(q.id)}" data-q="${esc(q.id)}" value="${esc(o)}"><span>${esc(o)}</span></label>`
+    ).join('');
+  } else if (q.type === 'scale') {
+    const min = Number(q.min ?? 1), max = Number(q.max ?? 10);
+    let out = '';
+    for (let v = min; v <= max; v++) out += `<label><input type="radio" name="${esc(q.id)}" data-q="${esc(q.id)}" value="${v}"><span>${v}</span></label>`;
+    body = `<div class="scale">${out}</div>`;
+  } else body = `<input type="text" data-q="${esc(q.id)}" placeholder="Ваш ответ">`;
+
+  return `<div class="q" id="qbox-${esc(q.id)}">
+    <div class="q-title">${i + 1}. ${esc(q.title)}${req}</div>${hint}${body}</div>`;
+}
+
+function renderForm(f, invite) {
+  FORM = f;
+  const qs = (f.questions || []).map(questionHtml).join('');
+  // Кандидат пришёл по персональной ссылке — имя и телефон уже известны с HH.
+  const known = invite && invite.status === 'ok';
+  const greet = known && invite.candidateName
+    ? `<div class="hello">Здравствуйте, <b>${esc(invite.candidateName)}</b>! Мы уже знаем ваши контакты — просто ответьте на вопросы.</div>`
+    : '';
+  const idBlock = known
+    ? `<input type="hidden" id="fio" value="${esc(invite.candidateName || '')}">
+       <input type="hidden" id="phone" value="${esc(invite.candidatePhone || '')}">
+       ${invite.candidatePhone ? `<div class="q"><div class="q-title">Ваш телефон для связи</div>
+         <input type="tel" id="phoneEdit" value="${esc(invite.candidatePhone)}">
+         <div class="q-hint" style="margin:8px 0 0">Если номер изменился — поправьте.</div></div>` : ''}`
+    : `<div class="q">
+         <div class="q-title">Ваши фамилия и имя<span class="req">*</span></div>
+         <input type="text" id="fio" placeholder="Иванов Иван">
+       </div>
+       <div class="q">
+         <div class="q-title">Контактный телефон</div>
+         <input type="tel" id="phone" placeholder="+7 900 000-00-00">
+       </div>`;
+  root.innerHTML = `
+    <div class="head">
+      <h1>${esc(f.title)}</h1>
+      ${f.description ? `<div class="desc">${esc(f.description)}</div>` : ''}
+      ${(known && invite.vacancyName) || f.vacancyName ? `<div class="vac">${esc((known && invite.vacancyName) || f.vacancyName)}</div>` : ''}
+      ${greet}
+    </div>
+    <div id="err"></div>
+    ${idBlock}
+    ${qs}
+    <div class="consent">
+      <input type="checkbox" id="consent">
+      <label for="consent">Я согласен(а) на обработку моих персональных данных, указанных в анкете,
+        для целей рассмотрения моей кандидатуры на вакансию. Согласие можно отозвать, написав работодателю.</label>
+    </div>
+    <button id="send">Отправить анкету</button>
+    <div class="foot">Анкета заполняется один раз. После отправки изменить ответы нельзя.</div>`;
+  document.getElementById('send').onclick = submit;
+}
+
+function collect() {
+  const answers = [];
+  for (const q of FORM.questions || []) {
+    let value;
+    if (q.type === 'many') {
+      value = [...document.querySelectorAll(`[data-q="${CSS.escape(q.id)}"]:checked`)].map(i => i.value);
+    } else if (q.type === 'one' || q.type === 'scale') {
+      const el = document.querySelector(`[data-q="${CSS.escape(q.id)}"]:checked`);
+      value = el ? el.value : '';
+    } else {
+      const el = document.querySelector(`[data-q="${CSS.escape(q.id)}"]`);
+      value = el ? el.value.trim() : '';
+    }
+    answers.push({ id: q.id, value });
+  }
+  return answers;
+}
+
+function showError(text, qid) {
+  document.getElementById('err').innerHTML = `<div class="msg err">${esc(text)}</div>`;
+  document.querySelectorAll('.q.invalid').forEach(e => e.classList.remove('invalid'));
+  const box = qid ? document.getElementById('qbox-' + qid) : null;
+  (box || document.getElementById('err')).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (box) box.classList.add('invalid');
+}
+
+async function submit() {
+  const btn = document.getElementById('send');
+  const fio = document.getElementById('fio').value.trim();
+  const phoneEl = document.getElementById('phoneEdit') || document.getElementById('phone');
+  if (!fio) return showError('Укажите фамилию и имя.');
+  if (!document.getElementById('consent').checked) return showError('Нужно согласие на обработку персональных данных.');
+
+  const answers = collect();
+  for (const q of FORM.questions || []) {
+    if (!q.required) continue;
+    const a = answers.find(x => x.id === q.id);
+    const empty = Array.isArray(a.value) ? a.value.length === 0 : !a.value;
+    if (empty) return showError(`Не заполнен обязательный вопрос: «${q.title}»`, q.id);
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
+  try {
+    const res = await fetch(`${API}${encodeURIComponent(publicId)}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        answers, consent: true, token,
+        candidateName: fio,
+        candidatePhone: phoneEl ? phoneEl.value.trim() : '',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось отправить');
+    stateBox('✅', 'Спасибо, анкета отправлена!', 'Мы изучим ваши ответы и свяжемся с вами.');
+  } catch (e) {
+    showError(e.message);
+    btn.disabled = false;
+    btn.textContent = 'Отправить анкету';
+  }
+}
+
+const INVITE_API = '/' + parts.join('/') + '/api/invite/';
+
+async function boot() {
+  try {
+    const res = await fetch(`${API}${encodeURIComponent(publicId)}`);
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return stateBox('🔒', 'Анкета недоступна', data.error || 'Ссылка неверна или анкета снята с публикации.');
+    }
+
+    let invite = null;
+    if (token) {
+      try {
+        const r = await fetch(INVITE_API + encodeURIComponent(token));
+        const d = await r.json();
+        if (d && d.ok) invite = d;
+      } catch { /* нет связи по приглашению — покажем обычную анкету */ }
+    }
+
+    if (invite && invite.status === 'used') {
+      return stateBox('✅', 'Анкета уже заполнена',
+        (invite.candidateName ? invite.candidateName + ', в' : 'В') + 'ы уже отправляли ответы по этой ссылке. Мы с вами свяжемся.');
+    }
+    if (invite && invite.status === 'expired') {
+      return stateBox('⌛', 'Срок ссылки истёк', 'Напишите нам в чат на hh.ru — пришлём новую ссылку.');
+    }
+    renderForm(data.form, invite);
+  } catch {
+    stateBox('⚠️', 'Ошибка загрузки', 'Попробуйте обновить страницу.');
+  }
+}
+boot();
+</script>
+</body>
+</html>

@@ -9,22 +9,54 @@
  */
 import { sheets } from "../google/sheets.client";
 import {
-    getPhoneInterviewResponses,
+    getAllNewResponses,
+    getAllConsiderResponses,
+    getAllNegotiationsByCollection,
     getResume,
     extractActions,
+    employerStage,
     sendCandidateMessage,
     doNegotiationAction,
     getNegotiation,
+    getConversationMessages,
     type HhNegotiation,
 } from "./hh-api";
+import { categoryForDecision, shouldSkipSend, hasAnyDecision } from "./message-dedup";
+import { isVacancyArchived, queueArchivedContact, vacancyLiveOverride } from "./archived-notify";
 import { askAi, parseAiJsonText } from "./ai-scorer";
 import { extractSpreadsheetId, readTemplates, findTemplate, fillTemplate } from "./sheets-analysis";
 import { registerInterviewConversation } from "./interview-chat";
 import { getInterviewChatState, updateInterviewChatState } from "./interview-chat.store";
+import {
+    markQuestionnaireSourceProcessed,
+    questionnaireSourceKey,
+    readProcessedQuestionnaireSources,
+} from "./questionnaire-source.store";
+import { beginVacancyRun, canContinueVacancyRun } from "./vacancy-activity";
 
 const FILTERS_SHEET = "Доп. фильтры";
 const RESULT_SHEET = "ИИ анализ тестового задания";
+/**
+ * Индекс колонки со ссылкой на резюме. Терпим к разному порядку слов:
+ * стандартное «Ссылка на резюме», но у части старых таблиц — «РЕЗЮМЕ ССЫЛКА».
+ * Приоритет точному совпадению, иначе — любой заголовок с «резюме» и «ссыл».
+ */
+function findResumeLinkIdx(headers: string[]): number {
+    const norm = headers.map((h) => String(h || "").trim().toLowerCase());
+    const exact = norm.indexOf("ссылка на резюме");
+    if (exact >= 0) return exact;
+    return norm.findIndex((h) => h.includes("резюме") && h.includes("ссыл"));
+}
 const EMPTY_HEADERS = ["", "вопрос без заголовка"];
+// В этой конкретной форме отдельной колонки телефона нет, а вопросы уже
+// пронумерованы в самих заголовках (2–24). Для остальных форм старая схема
+// «время, имя, телефон, вопросы» остаётся без изменений.
+const NUMBERED_FORM_WITHOUT_PHONE_ID = "1TYzJKQ6xAIolEeF-qtAf32tTOMe9ofxN9ZG9CYzkwTI";
+// Форма «Инженер изобретатель»: пронумерованные вопросы 1–10, ФИО в отдельной
+// колонке справа, телефона нет, есть колонка со ссылкой на резюме.
+const ENGINEER_FORM_ID = "1mOTlN2fr-VBjWguWnV5k-0AI-0f26WBfooDAJyuROHA";
+const FIXED_RESULT_RANGE_SPREADSHEET_ID = "1pf74G1-eftdSiKjROY8Pyi3SN1t6qMJTESHde_a6yBc";
+const QUESTIONNAIRE_WITHOUT_STAGE_VACANCY_IDS = new Set(["133959149"]);
 const QUESTIONNAIRE_HH_ACTIONS_ENABLED = process.env.QUESTIONNAIRE_HH_ACTIONS === "true";
 
 // ===== Чтение ссылки на анкету из «Доп. фильтры» =====
@@ -54,7 +86,27 @@ export interface FormQuestion {
 export interface FormAnswer {
     name: string;
     phone: string;
+    resumeUrl?: string;
+    /** Дата отправки анкеты в формате YYYY-MM-DD (из «Отметка времени»). */
+    submittedAt?: string;
+    sourceKey: string;
     answers: { num: number; title: string; answer: string }[];
+}
+
+/** «02.09.2024 18:30:20» -> «2024-09-02»; пусто, если формат не распознан. */
+function parseFormDate(raw: string): string {
+    const m = String(raw || "").match(/^\s*(\d{2})\.(\d{2})\.(\d{4})/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+/**
+ * Нижняя граница даты анкет для вакансии: ANKETA_MIN_DATE_<vacancyId>,
+ * иначе общий ANKETA_MIN_DATE. Формат YYYY-MM-DD. Пусто — берём все.
+ */
+function anketaMinDate(vacancyId: string): string {
+    return String(
+        process.env[`ANKETA_MIN_DATE_${vacancyId}`] || process.env.ANKETA_MIN_DATE || "",
+    ).trim();
 }
 export interface FormData {
     questions: FormQuestion[];
@@ -85,19 +137,64 @@ export async function readFormResponses(formUrl: string): Promise<FormData> {
         if (!EMPTY_HEADERS.includes(h.toLowerCase())) kept.push({ colIndex: i, title: h });
     });
 
-    // kept[0]=отметка времени, kept[1]=имя, kept[2]=телефон, kept[3+]=вопросы (нумерация = индекс в kept)
-    const nameCol = kept[1]?.colIndex ?? 1;
-    const phoneCol = kept[2]?.colIndex ?? 2;
-    const questions: FormQuestion[] = kept
-        .map((k, idx) => ({ ...k, num: idx }))
-        .filter((k) => k.num >= 3)
-        .map((k) => ({ num: k.num, title: k.title, colIndex: k.colIndex }));
+    const isNumberedFormWithoutPhone = spreadsheetId === NUMBERED_FORM_WITHOUT_PHONE_ID;
+    const isEngineerForm = spreadsheetId === ENGINEER_FORM_ID;
+    // Обе формы — пронумерованные, без телефона.
+    const isNumberedForm = isNumberedFormWithoutPhone || isEngineerForm;
+
+    // Служебные колонки — не вопросы. HR часто дописывает свои («Краткий
+    // комментарий», «Статус»), из-за чего позиционный разбор съезжал.
+    const SERVICE_RE = /отметка времени|краткий коммент|^статус$|адрес электронной почты|e-?mail|почта/i;
+    const NAME_RE = /фио|фамили|как вас зовут|представьтесь|ваше\s*(полное\s*)?имя|ваши\s+фамили|напишите\s+ваши/i;
+    const PHONE_RE = /телефон|моб\.|phone/i;
+
+    const resumeCol = rawHeaders.findIndex((h) => /резюме|resume/i.test(h));
+    const timeByHeader = rawHeaders.findIndex((h) => /отметка времени/i.test(h));
+    const timeCol = timeByHeader >= 0 ? timeByHeader : (kept[0]?.colIndex ?? 0);
+    const nameByHeader = rawHeaders.findIndex((h) => NAME_RE.test(h));
+    const phoneByHeader = rawHeaders.findIndex((h) => PHONE_RE.test(h));
+
+    // Колонки ищем по заголовку; если подходящего нет — старая позиционная схема
+    // (kept[0]=время, kept[1]=имя, kept[2]=телефон, kept[3+]=вопросы).
+    const nameCol = nameByHeader >= 0 ? nameByHeader : (kept[1]?.colIndex ?? 1);
+    let phoneCol: number;
+    if (isNumberedForm) {
+        phoneCol = -1;
+    } else if (phoneByHeader >= 0) {
+        phoneCol = phoneByHeader;
+    } else {
+        // запасная колонка годится, только если это не служебное поле (напр. email)
+        const fallback = kept[2]?.colIndex ?? 2;
+        phoneCol = SERVICE_RE.test(rawHeaders[fallback] || "") ? -1 : fallback;
+    }
+
+    // Порог номера вопроса: у Аналитика первые пункты — не вопросы, берём с 3;
+    // у «Инженера» вопросы нумеруются с 1.
+    const minQuestionNum = isEngineerForm ? 1 : 3;
+    const questions: FormQuestion[] = isNumberedForm
+        ? kept.flatMap((k) => {
+            const match = k.title.match(/^\s*(\d+)\s*[.)]/);
+            if (!match) return [];
+            const num = Number(match[1]);
+            return num >= minQuestionNum ? [{ num, title: k.title, colIndex: k.colIndex }] : [];
+        })
+        : (() => {
+            const skip = new Set([nameCol, phoneCol, resumeCol].filter((x) => x >= 0));
+            // Нумерация с 3 — совпадает со старой позиционной для обычных форм,
+            // поэтому колонки «Ответ на N вопрос» в таблицах остаются валидными.
+            return kept
+                .filter((k) => !skip.has(k.colIndex) && !SERVICE_RE.test(k.title))
+                .map((k, i) => ({ num: i + 3, title: k.title, colIndex: k.colIndex }));
+        })();
 
     const answers: FormAnswer[] = rows.slice(1)
         .filter((row) => row.some((c) => String(c || "").trim()))
         .map((row) => ({
             name: String(row[nameCol] || "").trim(),
-            phone: String(row[phoneCol] || "").trim(),
+            phone: phoneCol >= 0 ? String(row[phoneCol] || "").trim() : "",
+            resumeUrl: resumeCol >= 0 ? String(row[resumeCol] || "").trim() : "",
+            submittedAt: parseFormDate(String(row[timeCol] || "")),
+            sourceKey: questionnaireSourceKey(spreadsheetId, firstSheet, row),
             answers: questions.map((q) => ({
                 num: q.num,
                 title: q.title,
@@ -138,11 +235,13 @@ export function extractPhoneFromResume(resume: any): string {
 
 export function matchCandidate(formName: string, candidates: HhNegotiation[]): HhNegotiation | null {
     const formTokens = normName(formName);
-    if (formTokens.length === 0) return null;
+    // Одного имени недостаточно: «Максим» не должен автоматически совпадать
+    // с любым Максимом, который сейчас находится в «Первичном контакте».
+    if (formTokens.length < 2) return null;
 
     // сколько слов должно совпасть: 1 слово в форме → 1; 2 и больше → минимум 2 (фамилия+имя),
     // чтобы опечатка в отчестве не ломала матч
-    const need = formTokens.length >= 2 ? 2 : 1;
+    const need = 2;
 
     const scored = candidates
         .map((c) => {
@@ -228,6 +327,8 @@ ${qaBlock}
 // ===== Запись в лист «ИИ анализ тестового задания» =====
 const HR_DECISION_HEADER = "Действие HR";
 const ANALYSIS_DATE_HEADER = "Дата анализа анкеты";
+/** Отметка, что решение HR по этой строке уже исполнено (письмо + действие на HH). */
+const SENT_HEADER = "Отправлено";
 const HR_OPTIONS = ["Ожидание", "Подходит", "Не подходит"];
 
 /** Текущее время по Москве в формате ДД.ММ.ГГГГ ЧЧ:ММ */
@@ -378,9 +479,34 @@ async function ensureAnalysisDateColumn(spreadsheetId: string): Promise<void> {
 }
 
 /** Настраивает служебные колонки листа анкет: «Дата анализа анкеты» + «Действие HR» */
+function colLetter(idx: number): string {
+    let s = "";
+    let n = idx;
+    do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+    return s;
+}
+
+// Колонка «ФИО»: занимаем первую пустую колонку (обычно рядом со ссылкой), иначе добавляем в конец
+async function ensureFioColumn(spreadsheetId: string): Promise<void> {
+    const headers = await getResultHeaders(spreadsheetId);
+    if (headers.length === 0) return;
+    if (headers.some((h) => h.trim().toLowerCase() === "фио")) return;
+    let idx = headers.findIndex((h) => !h.trim());
+    if (idx === -1) idx = headers.length;
+    const col = colLetter(idx);
+    await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${RESULT_SHEET}!${col}1`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [["ФИО"]] },
+    });
+    console.log(`[anketa] колонка «ФИО» добавлена (${col})`);
+}
+
 export async function ensureQuestionnaireColumns(spreadsheetId: string): Promise<void> {
-    await ensureAnalysisDateColumn(spreadsheetId); // сначала дата
-    await ensureHrDecisionColumn(spreadsheetId);   // потом решение (в конце)
+    await ensureFioColumn(spreadsheetId);          // ФИО (первой)
+    await ensureAnalysisDateColumn(spreadsheetId); // дата
+    await ensureHrDecisionColumn(spreadsheetId);   // решение (в конце)
 }
 
 async function getResultHeaders(spreadsheetId: string): Promise<string[]> {
@@ -412,16 +538,20 @@ export async function readProcessedNegotiationIds(spreadsheetId: string): Promis
 export async function appendTestTaskResult(
     spreadsheetId: string,
     resumeUrl: string,
-    result: QuestionnaireResult
+    result: QuestionnaireResult,
+    candidateName: string = ""
 ): Promise<void> {
     const headers = await getResultHeaders(spreadsheetId);
     if (headers.length === 0) throw new Error(`лист "${RESULT_SHEET}" не найден или без заголовков`);
 
     const row = new Array(headers.length).fill("");
+    const resumeLinkIdx = findResumeLinkIdx(headers);
     headers.forEach((h, i) => {
         const hl = h.toLowerCase();
-        if (hl === "ссылка на резюме") {
+        if (i === resumeLinkIdx) {
             row[i] = resumeUrl;
+        } else if (hl === "фио") {
+            row[i] = candidateName;
         } else if (hl === "совокупное заключение") {
             row[i] = result.summary;
         } else if (hl === "итоговый балл") {
@@ -440,9 +570,20 @@ export async function appendTestTaskResult(
         }
     });
 
-    await sheets.spreadsheets.values.append({
+    // ВСЕГДА пишем в явный диапазон, начиная с колонки A, а НЕ через values.append.
+    // У Google авто-детект таблицы на широких строках сдвигает строку на колонку вправо
+    // (колонка A пустеет), после чего следующие дозаписи затирают эту строку — из-за этого
+    // терялись анкеты (Бобров, Дробышев, Зарянов) и «съезжали» ячейки. Явный диапазон
+    // A{n}:{lastCol}{n} исключает и сдвиг, и затирание для всех вакансий.
+    const lastCol = columnToLetter(headers.length - 1);
+    const existing = await sheets.spreadsheets.values.get({
         spreadsheetId,
         range: `${RESULT_SHEET}!A:A`,
+    });
+    const nextRow = Math.max(2, (existing.data.values || []).length + 1);
+    await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${RESULT_SHEET}!A${nextRow}:${lastCol}${nextRow}`,
         valueInputOption: "USER_ENTERED",
         requestBody: { values: [row] },
     });
@@ -497,61 +638,172 @@ export async function processAnketaHrDecisions(
     vacancy: QuestionnaireInput,
     options: { dryRun?: boolean } = {}
 ): Promise<{ invited: number; rejected: number; skipped: number }> {
-    const dryRun = options.dryRun !== false;
+    const dryRun = vacancyLiveOverride(vacancy.vacancyId) ? false : (options.dryRun !== false);
     const tag = dryRun ? "[anketa-hr:DRY]" : "[anketa-hr:LIVE]";
+    const runToken = beginVacancyRun(vacancy.vacancyId);
+    if (!canContinueVacancyRun(runToken)) return { invited: 0, rejected: 0, skipped: 0 };
     const spreadsheetId = extractSpreadsheetId(vacancy.templatesUrl || "");
     if (!spreadsheetId) return { invited: 0, rejected: 0, skipped: 0 };
 
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${RESULT_SHEET}!A:Z` });
+    // Диапазон должен покрывать ВСЕ колонки: «Действие HR» стоит после блока
+    // «Ответ на N вопрос» и у широких анкет уезжает за Z (у Аналитика — AB).
+    // С A:Z колонка не находилась и шаг молча не делал ничего.
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${RESULT_SHEET}!A:BZ` });
     const rows = (resp.data.values || []) as string[][];
     if (rows.length < 2) return { invited: 0, rejected: 0, skipped: 0 };
     const headers = rows[0].map((h) => String(h || "").trim().toLowerCase());
-    const linkIdx = headers.findIndex((h) => h === "ссылка на резюме");
+    const linkIdx = findResumeLinkIdx(headers);
     const hrIdx = headers.findIndex((h) => h === HR_DECISION_HEADER.toLowerCase());
     if (linkIdx === -1 || hrIdx === -1) return { invited: 0, rejected: 0, skipped: 0 };
 
-    const templates = dryRun ? [] : await readTemplates(spreadsheetId);
-    let invited = 0, rejected = 0, skipped = 0;
+    // Признак «уже исполнено» держим в самой таблице, а не выводим из состояния на HH.
+    // Раньше строка пропускалась, если у кандидата есть диалог о собеседовании или он уже
+    // отклонён, — но и то и другое возникает ещё на этапе резюме, поэтому решение HR по
+    // анкете для таких кандидатов молча не исполнялось (письмо не уходило).
+    let sentIdx = headers.findIndex((h) => h === SENT_HEADER.toLowerCase());
+    if (sentIdx === -1) {
+        sentIdx = Math.max(rows[0].length, hrIdx + 1);
+        if (!dryRun) {
+            try {
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId,
+                    range: `${RESULT_SHEET}!${columnToLetter(sentIdx)}1`,
+                    valueInputOption: "RAW",
+                    requestBody: { values: [[SENT_HEADER]] },
+                });
+            } catch (e: any) {
+                console.warn(`${tag} не смог создать колонку «${SENT_HEADER}»: ${e.message}`);
+            }
+        }
+    }
+    const markSent = async (rowNumber: number, note: string) => {
+        if (dryRun) return;
+        try {
+            await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: `${RESULT_SHEET}!${columnToLetter(sentIdx)}${rowNumber}`,
+                valueInputOption: "RAW",
+                requestBody: { values: [[`${note} ${moscowNow()}`]] },
+            });
+        } catch (e: any) {
+            console.warn(`${tag} не смог отметить строку ${rowNumber}: ${e.message}`);
+        }
+    };
 
-    for (const row of rows.slice(1)) {
+    const templates = dryRun ? [] : await readTemplates(spreadsheetId);
+    let invited = 0, rejected = 0, skipped = 0, failed = 0;
+
+    for (let rowIdx = 1; rowIdx < rows.length; rowIdx++) {
+        if (!canContinueVacancyRun(runToken)) {
+            console.log(`${tag} «${vacancy.vacancyName}» приостановлена — решения HR остановлены`);
+            break;
+        }
+        const row = rows[rowIdx];
+        const rowNumber = rowIdx + 1;
         const decision = String(row[hrIdx] || "").trim();
         if (decision !== "Подходит" && decision !== "Не подходит") continue;
+        if (String(row[sentIdx] || "").trim()) { skipped++; continue; }
         const link = String(row[linkIdx] || "");
         const negId = (link.match(/[?&]t=([^&]+)/) || [])[1] || "";
         if (!negId) continue;
 
-        const hh = await getNegotiation(negId);
-        if (!hh) { skipped++; continue; }
-        const cn = hhCandidateName(hh);
-        const sid = String(hh.state?.id || "");
-        const alreadyDiscarded = sid.startsWith("discard") || hh.state?.name === "Отказ";
-        const alreadyInvited = !!getInterviewChatState(negId);
-        // Кого уже тронули по старой схеме (пригласили ИЛИ отклонили) — НЕ трогаем, оставляем как есть.
-        // Новая схема по «Действие HR» применяется только к ещё не обработанным кандидатам.
-        if (alreadyInvited || alreadyDiscarded) { skipped++; continue; }
+        // Один проблемный отклик (например, из архивной вакансии — HH отдаёт
+        // 403 invalid_vacancy) не должен ронять обработку остальных кандидатов.
+        try {
+            const hh = await getNegotiation(negId);
+            if (!hh) { skipped++; continue; }
+            if (!canContinueVacancyRun(runToken)) break;
+            const cn = hhCandidateName(hh);
+            // Стадия — из воронки работодателя (hh.state залипает на «Отклик»).
+            const hhStage = employerStage(hh);
+            const sid = String(hhStage.id || "");
+            const alreadyDiscarded = sid.startsWith("discard") || hhStage.name === "Отказ";
 
-        if (decision === "Подходит") {
-            console.log(`${tag} ✉ ПРИГЛАШЕНИЕ: ${vacancy.vacancyName} / ${cn}`);
-            if (!dryRun) {
-                const tpl = findTemplate(templates, "Успешно", "Тестовое задание");
-                const msg = tpl ? fillTemplate(tpl.text, cn, vacancy.vacancyName) : "";
-                if (msg && hh.messages_url) await sendCandidateMessage(hh.messages_url, msg);
-                await registerInterviewConversation(vacancy, hh);
+            // Архивная вакансия: HH вернёт 403 на любую отправку/действие. Не пытаемся.
+            // В список «написать вручную» берём ТОЛЬКО тех, с кем ещё не связывались
+            // (в чате нет ни отказа, ни приглашения — ни от бота, ни вручную).
+            if (await isVacancyArchived(vacancy.vacancyId)) {
+                const chat = hh.messages_url ? await getConversationMessages(hh.messages_url).catch(() => []) : [];
+                if (!canContinueVacancyRun(runToken)) break;
+                if (hasAnyDecision(chat)) {
+                    console.log(`${tag} 🗄 ${cn}: архив, но контакт уже был — пропуск`);
+                } else {
+                    queueArchivedContact(vacancy.vacancyId, vacancy.vacancyName, { name: cn, negotiationId: negId, link });
+                    console.log(`${tag} 🗄 ${cn}: архив, не связывались — в список на ручную отправку`);
+                }
+                await markSent(rowNumber, "архив — вручную");
+                skipped++;
+                continue;
             }
-            invited++;
-        } else {
-            const actions = extractActions(hh);
-            if (!actions.action_discard_url) { skipped++; continue; }
-            console.log(`${tag} ✗ ОТКАЗ: ${vacancy.vacancyName} / ${cn}`);
-            if (!dryRun) {
-                const tpl = findTemplate(templates, "Отказ", "Тестовое задание");
-                const msg = tpl ? fillTemplate(tpl.text, cn, vacancy.vacancyName) : "";
-                await doNegotiationAction(actions.action_discard_url, actions.action_discard_method, msg || undefined);
+
+            // ДЕДУП: если в чате уже есть сообщение нужного типа (прислал бот ИЛИ руководитель
+            // вручную) — не отправляем повторно. Отказ распознаётся одинаково на всех стадиях.
+            const intendedCat = categoryForDecision(decision, "anketa");
+            if (intendedCat && hh.messages_url) {
+                const chat = await getConversationMessages(hh.messages_url).catch(() => []);
+                if (!canContinueVacancyRun(runToken)) break;
+                const s = shouldSkipSend(chat, intendedCat);
+                if (s.skip) {
+                    console.log(`${tag} ⏭ ${cn}: ${s.reason} — повторно/поверх НЕ отправляю`);
+                    await markSent(rowNumber, s.reason);
+                    skipped++;
+                    continue;
+                }
             }
-            rejected++;
+
+            if (decision === "Подходит") {
+                console.log(`${tag} ✉ ПРИГЛАШЕНИЕ: ${vacancy.vacancyName} / ${cn}`);
+                if (!dryRun) {
+                    if (!canContinueVacancyRun(runToken)) break;
+                    const tpl = findTemplate(templates, "Успешно", "Тестовое задание");
+                    const msg = tpl ? fillTemplate(tpl.text, cn, vacancy.vacancyName) : "";
+                    // Раньше эти случаи молчали: в лог шло «ПРИГЛАШЕНИЕ», а письмо не уходило.
+                    if (!tpl) console.warn(`${tag} ⚠ ${cn}: нет шаблона «Успешно + Тестовое задание» — письмо НЕ отправлено`);
+                    else if (!hh.messages_url) console.warn(`${tag} ⚠ ${cn}: нет переписки на HH — письмо НЕ отправлено`);
+                    else await sendCandidateMessage(hh.messages_url, msg);
+                    // Двигаем по воронке: приглашённый на собеседование не должен
+                    // оставаться в «Подумать» — иначе стадия на HH не отражает реальность.
+                    const acts = extractActions(hh);
+                    if (acts.action_interview_url && !["interview", "offer", "hired"].includes(sid)) {
+                        try {
+                            await doNegotiationAction(acts.action_interview_url, acts.action_interview_method);
+                            console.log(`${tag} → ${cn}: стадия переведена в «Собеседование»`);
+                        } catch (e: any) {
+                            console.warn(`${tag} ⚠ ${cn}: не смог перевести стадию: ${e.message}`);
+                        }
+                    }
+                    await registerInterviewConversation(vacancy, hh);
+                    await markSent(rowNumber, "приглашение");
+                }
+                invited++;
+            } else {
+                const actions = extractActions(hh);
+                console.log(`${tag} ✗ ОТКАЗ: ${vacancy.vacancyName} / ${cn}`);
+                if (!dryRun) {
+                    if (!canContinueVacancyRun(runToken)) break;
+                    const tpl = findTemplate(templates, "Отказ", "Тестовое задание");
+                    const msg = tpl ? fillTemplate(tpl.text, cn, vacancy.vacancyName) : "";
+                    if (!tpl) console.warn(`${tag} ⚠ ${cn}: нет шаблона «Отказ + Тестовое задание» — отказ без письма`);
+                    if (alreadyDiscarded) {
+                        // Стадия уже «Отказ» — повторное действие HH отклонит, но письмо
+                        // кандидат так и не получил, поэтому отправляем его отдельно.
+                        if (msg && hh.messages_url) await sendCandidateMessage(hh.messages_url, msg);
+                    } else if (actions.action_discard_url) {
+                        await doNegotiationAction(actions.action_discard_url, actions.action_discard_method, msg || undefined);
+                    } else {
+                        console.warn(`${tag} ⚠ ${cn}: нет действия «отказ» на HH`);
+                        if (msg && hh.messages_url) await sendCandidateMessage(hh.messages_url, msg);
+                    }
+                    await markSent(rowNumber, "отказ");
+                }
+                rejected++;
+            }
+        } catch (err: any) {
+            failed++;
+            console.error(`${tag} ✗ сбой по отклику ${negId}: ${err.message}`);
         }
     }
-    console.log(`${tag} ${vacancy.vacancyName}: приглашений ${invited}, отказов ${rejected}, пропущено ${skipped}`);
+    console.log(`${tag} ${vacancy.vacancyName}: приглашений ${invited}, отказов ${rejected}, пропущено ${skipped}${failed ? `, сбоев ${failed}` : ""}`);
     return { invited, rejected, skipped };
 }
 
@@ -570,11 +822,48 @@ export interface QuestionnaireSummary {
     message: string;
 }
 
+/** Нормализованный ключ ФИО для дедупа (регистр, ё→е, схлопнутые пробелы). */
+function fioKeyOf(name: string): string {
+    return String(name || "").toLowerCase().replace(/ё/g, "е").split(/\s+/).filter(Boolean).join(" ");
+}
+/** Чистит ФИО из формы: убирает хвосты «. Кандидат…», « - Инженер», «(…)», возраст/город. */
+function cleanCandidateFio(raw: string): string {
+    // мусор в начале («|Демин…») ломает сопоставление фамилии с HH
+    let s = String(raw || "").replace(/^[^А-Яа-яЁёA-Za-z]+/, "").trim();
+    s = s.split(/[.,(]|\s+[—-]\s+/)[0].trim();
+    // Если строка начинается с 2–3 слов с заглавной (ФИО) — берём их, отсекая
+    // хвосты вида «41 год Воронеж».
+    const m = s.match(/^([А-ЯЁ][а-яё-]+(?:\s+[А-ЯЁ][а-яё-]+){1,2})/);
+    if (m) return m[1].trim();
+    return s.replace(/\s+\d+\s*(год|года|лет|годиков|г)?\.?$/i, "").trim();
+}
+/** Множество уже записанных ФИО (ключи) из листа результатов — для дедупа fallback-записи. */
+/**
+ * ФИО уже записанных в лист кандидатов.
+ * Возвращает null, если таблицу прочитать не удалось (квота Google, сеть). Раньше
+ * тут отдавался пустой Set — и разовый сбой чтения превращался в дубли строк:
+ * бот считал, что обработанных нет вообще, и записывал анкеты заново.
+ */
+async function readExistingFioKeys(spreadsheetId: string): Promise<Set<string> | null> {
+    try {
+        const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${RESULT_SHEET}!A:AB` });
+        const rows = resp.data.values || [];
+        const hdr = (rows[0] || []).map((h) => String(h).trim().toLowerCase());
+        const fioIdx = hdr.indexOf("фио");
+        if (fioIdx < 0) return new Set();
+        return new Set(rows.slice(1).map((r) => fioKeyOf(String(r[fioIdx] || ""))).filter(Boolean));
+    } catch {
+        return null;
+    }
+}
+
 export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): Promise<QuestionnaireSummary> {
     const tag = "[anketa]";
     const empty = (message: string): QuestionnaireSummary => ({
         total_forms: 0, evaluated: 0, passed: 0, failed: 0, skipped_no_match: 0, skipped_processed: 0, message,
     });
+    const runToken = beginVacancyRun(vacancy.vacancyId);
+    if (!canContinueVacancyRun(runToken)) return empty("вакансия приостановлена");
 
     const spreadsheetId = extractSpreadsheetId(vacancy.templatesUrl || "");
     if (!spreadsheetId) return empty("нет templatesUrl");
@@ -584,6 +873,7 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
 
     const form = await readFormResponses(anketaUrl);
     if (form.answers.length === 0) { console.log(`${tag} ${vacancy.vacancyName}: ответов в анкете нет`); return empty("нет ответов в анкете"); }
+    if (!canContinueVacancyRun(runToken)) return empty("вакансия приостановлена");
 
     // настраиваем служебные колонки (Дата анализа анкеты + Действие HR с дропдауном/цветами)
     try {
@@ -592,11 +882,35 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
         console.warn(`${tag} не смог настроить колонки анкеты: ${e.message}`);
     }
 
-    const candidates = await getPhoneInterviewResponses(vacancy.vacancyId);
+    const questionnaireWithoutStage = QUESTIONNAIRE_WITHOUT_STAGE_VACANCY_IDS.has(vacancy.vacancyId);
+    // Анкету заполняют на «Первичном контакте», но пока ответ дойдёт до бота, кандидата
+    // часто уже двигают дальше по воронке. Раньше пул ограничивался phone_interview —
+    // такие анкеты не находили кандидата и падали в запись «без матча HH» (дубли строк
+    // без ссылки на отклик). Поэтому смотрим и последующие стадии.
+    const stages = ["phone_interview", "assessment", "interview", "offer", "hired"];
+    if (questionnaireWithoutStage) stages.unshift("response", "consider");
+    const acrossStages: HhNegotiation[] = [];
+    for (const stage of stages) {
+        if (!canContinueVacancyRun(runToken)) return empty("вакансия приостановлена");
+        try {
+            acrossStages.push(...await getAllNegotiationsByCollection(stage, vacancy.vacancyId));
+        } catch (e: any) {
+            console.warn(`${tag} стадия ${stage} недоступна: ${e.message}`);
+        }
+    }
+    const candidates = [...new Map(acrossStages.map((candidate) => [String(candidate.id), candidate])).values()];
+
     const processed = await readProcessedNegotiationIds(spreadsheetId);
+    const processedSources = readProcessedQuestionnaireSources();
+    const knownFio = await readExistingFioKeys(spreadsheetId);
+    // Без надёжного списка уже записанных ФИО запись «без матча HH» отключаем —
+    // лучше пропустить цикл, чем наплодить дубли.
+    const fioSetReliable = knownFio !== null;
+    const existingFioSet = knownFio || new Set<string>();
+    if (!fioSetReliable) console.warn(`${tag} ${vacancy.vacancyName}: не прочитал лист результатов — запись без матча HH отключена на этот цикл`);
     const templates = QUESTIONNAIRE_HH_ACTIONS_ENABLED ? await readTemplates(spreadsheetId) : [];
 
-    console.log(`${tag} ${vacancy.vacancyName}: ответов ${form.answers.length}, в «первичном контакте» ${candidates.length}, вопросов ${form.questions.length}`);
+    console.log(`${tag} ${vacancy.vacancyName}: ответов ${form.answers.length}, кандидатов в воронке ${candidates.length}, вопросов ${form.questions.length}`);
 
     // Ленивая карта телефон → кандидат (строим только если матч по имени не сработал).
     // Телефоны берём из полного резюме кандидата.
@@ -605,6 +919,7 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
         if (phoneMap) return phoneMap;
         phoneMap = new Map();
         for (const c of candidates) {
+            if (!canContinueVacancyRun(runToken)) break;
             if (!c.resume?.id) continue;
             try {
                 const resume = await getResume(c.resume.id, c.id, vacancy.vacancyId);
@@ -617,24 +932,108 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
 
     let evaluated = 0, passed = 0, failed = 0, skippedNoMatch = 0, skippedProcessed = 0;
 
+    const minDate = anketaMinDate(vacancy.vacancyId);
+    if (minDate) console.log(`${tag} ${vacancy.vacancyName}: берём анкеты не раньше ${minDate}`);
+    let skippedOld = 0;
+
     for (const ans of form.answers) {
-        let cand = matchCandidate(ans.name, candidates);
-        // если по имени не сошлось — пробуем по телефону
-        if (!cand && ans.phone) {
-            const fp = normPhone(ans.phone);
-            if (fp.length >= 10) {
-                const pm = await buildPhoneMap();
-                cand = pm.get(fp) || null;
-                if (cand) console.log(`${tag} • "${ans.name}" сопоставлен по телефону`);
+        if (!canContinueVacancyRun(runToken)) {
+            console.log(`${tag} ${vacancy.vacancyName}: приостановлена — оставшиеся анкеты не анализируются`);
+            break;
+        }
+        if (processedSources.has(ans.sourceKey)) {
+            skippedProcessed++;
+            continue;
+        }
+        // Старые анкеты (до отсечки) не трогаем — их разбирали вручную.
+        if (minDate && ans.submittedAt && ans.submittedAt < minDate) {
+            skippedOld++;
+            continue;
+        }
+
+        const candidateByName = matchCandidate(ans.name, candidates);
+        const formPhone = normPhone(ans.phone);
+        let cand: HhNegotiation | null = candidateByName;
+
+        // Для архивной вакансии кандидаты остаются в «Отклик/Подумать».
+        // Здесь требуем одновременно уникальное совпадение ФИО и точный телефон,
+        // чтобы не повторить ошибку с привязкой чужой анкеты.
+        if (questionnaireWithoutStage) {
+            if (!candidateByName || !candidateByName.resume?.id || formPhone.length < 10) {
+                cand = null;
+                console.log(`${tag} • "${ans.name}" — для этой вакансии нужны точные ФИО и телефон, пропуск`);
+            } else {
+                try {
+                    const resume = await getResume(
+                        candidateByName.resume.id,
+                        candidateByName.id,
+                        vacancy.vacancyId,
+                    );
+                    const candidatePhone = extractPhoneFromResume(resume);
+                    if (!candidatePhone || candidatePhone !== formPhone) {
+                        cand = null;
+                        console.log(`${tag} • "${ans.name}" — ФИО найдено, но телефон не совпал, пропуск`);
+                    } else {
+                        cand = candidateByName;
+                        console.log(`${tag} • "${ans.name}" сопоставлен по ФИО и телефону`);
+                    }
+                } catch (e: any) {
+                    cand = null;
+                    console.log(`${tag} • "${ans.name}" — не удалось проверить телефон: ${e.message}`);
+                }
+            }
+        // Если в форме указан полноценный телефон, он обязателен для матчинга.
+        // Совпадение только по ФИО при несовпадающем телефоне запрещено.
+        } else if (formPhone.length >= 10) {
+            const pm = await buildPhoneMap();
+            const candidateByPhone = pm.get(formPhone) || null;
+
+            if (!candidateByPhone) {
+                cand = null;
+                console.log(`${tag} • "${ans.name}" — телефон из анкеты не совпал ни с одним кандидатом, пропуск`);
+            } else if (candidateByName && candidateByName.id !== candidateByPhone.id) {
+                cand = null;
+                console.log(`${tag} • "${ans.name}" — конфликт ФИО и телефона, пропуск`);
+            } else {
+                cand = candidateByPhone;
+                console.log(`${tag} • "${ans.name}" сопоставлен по телефону`);
             }
         }
         if (!cand) {
-            console.log(`${tag} • "${ans.name}" — не сопоставлен с кандидатом из «первичного контакта», пропуск`);
-            skippedNoMatch++;
+            // Fallback: анкету всё равно анализируем и пишем по ФИО (без действий на HH).
+            // Так новые анкеты не теряются, даже если кандидата нет в нужной стадии.
+            const fio = cleanCandidateFio(ans.name);
+            const fioKey = fioKeyOf(fio);
+            if (fioKey.split(" ").filter(Boolean).length < 2) {
+                console.log(`${tag} • "${ans.name}" — нет матча и ФИО неполное, пропуск`);
+                skippedNoMatch++;
+                continue;
+            }
+            if (!fioSetReliable) { skippedProcessed++; continue; }
+            if (existingFioSet.has(fioKey)) { skippedProcessed++; continue; }
+            const rlink = /^https?:\/\//i.test(ans.resumeUrl || "") ? String(ans.resumeUrl) : "";
+            try {
+                const result = await evaluateQuestionnaire(vacancy.vacancyName, ans);
+                if (!canContinueVacancyRun(runToken)) {
+                    console.log(`${tag} • ${fio}: вакансия приостановлена во время анализа — результат отброшен`);
+                    break;
+                }
+                await appendTestTaskResult(spreadsheetId, rlink, result, fio);
+                markQuestionnaireSourceProcessed(ans.sourceKey, vacancy.vacancyId, "");
+                processedSources.add(ans.sourceKey);
+                existingFioSet.add(fioKey);
+                evaluated++;
+                if (result.verdict === "Прошёл") passed++; else failed++;
+                console.log(`${tag} • ${fio} (без матча HH) → ${result.avgScore} → ${result.verdict}`);
+            } catch (err: any) {
+                console.error(`${tag} ошибка (без матча) по "${ans.name}": ${err.message}`);
+            }
             continue;
         }
         const negotiationId = cand.id;
         if (processed.has(String(negotiationId))) {
+            markQuestionnaireSourceProcessed(ans.sourceKey, vacancy.vacancyId, String(negotiationId));
+            processedSources.add(ans.sourceKey);
             skippedProcessed++;
             continue;
         }
@@ -643,7 +1042,15 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
             : cand.resume?.alternate_url || "";
         try {
             const result = await evaluateQuestionnaire(vacancy.vacancyName, ans);
-            await appendTestTaskResult(spreadsheetId, resumeUrl, result);
+            if (!canContinueVacancyRun(runToken)) {
+                console.log(`${tag} • ${ans.name}: вакансия приостановлена во время анализа — результат отброшен`);
+                break;
+            }
+            await appendTestTaskResult(spreadsheetId, resumeUrl, result, hhCandidateName(cand));
+            markQuestionnaireSourceProcessed(ans.sourceKey, vacancy.vacancyId, String(negotiationId));
+            processedSources.add(ans.sourceKey);
+            processed.add(String(negotiationId));
+            existingFioSet.add(fioKeyOf(hhCandidateName(cand)));
             // Анкета ТОЛЬКО оценивает и пишет в таблицу. Действия на HH — по решению HR
             // в колонке «Действие HR» (см. processAnketaHrDecisions ниже).
             evaluated++;
@@ -654,7 +1061,9 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
         }
     }
 
-    if (!QUESTIONNAIRE_HH_ACTIONS_ENABLED) {
+    if (!canContinueVacancyRun(runToken)) {
+        console.log(`${tag} ${vacancy.vacancyName}: дальнейшие действия остановлены`);
+    } else if (!QUESTIONNAIRE_HH_ACTIONS_ENABLED) {
         console.log(`${tag} HH-actions for questionnaire are disabled (QUESTIONNAIRE_HH_ACTIONS != true)`);
     } else {
         try {
@@ -669,6 +1078,6 @@ export async function processVacancyQuestionnaire(vacancy: QuestionnaireInput): 
         evaluated, passed, failed,
         skipped_no_match: skippedNoMatch,
         skipped_processed: skippedProcessed,
-        message: `Анкеты: оценено ${evaluated} (прошли ${passed}, нет ${failed}), без матча ${skippedNoMatch}, уже обработано ${skippedProcessed}`,
+        message: `Анкеты: оценено ${evaluated} (прошли ${passed}, нет ${failed}), без матча ${skippedNoMatch}, уже обработано ${skippedProcessed}${skippedOld ? `, старых пропущено ${skippedOld}` : ""}`,
     };
 }

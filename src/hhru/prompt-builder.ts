@@ -46,7 +46,14 @@ export interface PromptCandidate {
 /**
  * Строит промпт. vacancy — объект из getVacancy, filter — доп. фильтры из таблицы.
  */
-export function buildPrompt(vacancy: any, filter: string, candidate: PromptCandidate): string {
+export function buildPrompt(
+    vacancy: any,
+    filter: string,
+    candidate: PromptCandidate,
+    options: { minScore?: number } = {},
+): string {
+    const minScore = Number.isFinite(options.minScore) ? Math.max(0, Math.min(10, Number(options.minScore))) : 7;
+    const manualFrom = Math.max(0, minScore - 2);
     const vacancyDescription = stripHtml(vacancy?.description);
     const keySkills = names(vacancy?.key_skills);
     const professionalRoles = names(vacancy?.professional_roles);
@@ -92,20 +99,27 @@ ${vacancyDescription}
 ДОПОЛНИТЕЛЬНЫЕ ФИЛЬТРЫ ОТ ЗАКАЗЧИКА:
 ${filter || "не указано"}
 
+ПРАВИЛА ДОПОЛНИТЕЛЬНЫХ ФИЛЬТРОВ:
+- Для каждого пронумерованного фильтра верни filter_results: number, matched и короткую причину.
+- AUTO +: учитывай подтверждённое соответствие как плюс при базовой оценке.
+- AUTO −: учитывай подтверждённое соответствие как минус при базовой оценке.
+- FIXED: не меняй из-за него базовый score — система сама прибавит или вычтет указанные баллы после ответа.
+- matched=true только когда резюме действительно подтверждает условие; отсутствие сведений не является совпадением.
+
 ПОЛНОЕ РЕЗЮМЕ КАНДИДАТА:
 ${candidate.resume_text}
 
 ПРАВИЛА ОЦЕНКИ:
 Оцени кандидата по шкале от 0 до 10.
 
-0–4 балла: Кандидат не подходит. Нет нужного опыта, навыков, города, формата работы или есть сильные стоп-факторы.
-5–6 баллов: Кандидат спорный. Есть часть нужного опыта или навыков, но есть заметные риски. Нужно ручное рассмотрение HR.
-7–10 баллов: Кандидат подходит. Есть хорошее соответствие вакансии, требованиям, опыту, навыкам или потенциалу.
+Ниже ${manualFrom}: Кандидат не подходит.
+От ${manualFrom} до значения ниже ${minScore}: Кандидат спорный, нужна ручная проверка HR.
+От ${minScore} и выше: Кандидат подходит.
 
 ЖЁСТКИЕ ПРАВИЛА ДЛЯ STATUS:
-- Если score меньше 5 — status = "Отказ"
-- Если score равен 5 или 6 — status = "Ручная проверка"
-- Если score равен 7 или выше — status = "Подходит"
+- Если score меньше ${manualFrom} — status = "Отказ"
+- Если score от ${manualFrom}, но меньше ${minScore} — status = "Ручная проверка"
+- Если score равен ${minScore} или выше — status = "Подходит"
 
 ВАЖНО:
 - Status должен строго соответствовать score.
@@ -123,7 +137,10 @@ ${candidate.resume_text}
   "resume_url": "${candidate.resume_url || "не указано"}",
   "ai_comment": "короткий комментарий по кандидату: почему поставлен такой балл, какие плюсы и минусы",
   "score": 0,
-  "status": "Отказ"
+  "status": "Отказ",
+  "filter_results": [
+    { "number": 1, "matched": false, "reason": "почему условие подтверждено или не подтверждено" }
+  ]
 }
 `.trim();
 }

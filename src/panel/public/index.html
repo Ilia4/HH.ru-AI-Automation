@@ -1,0 +1,1559 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="/hr/">
+<title>HR-панель · HH.ru</title>
+<style>
+  :root{color-scheme:light}
+  :root{
+    --bg:#f4f6fa;--surface:#ffffff;--surface2:#f7f9fc;--line:#e2e7f0;
+    --txt:#1b2233;--mut:#6b7488;--blue:#3d7bfd;--ok:#12a06a;
+    --warn:#b8730a;--err:#d9455a;--purple:#7b52d8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--txt)}
+  button,input,select{font:inherit}
+  button{border:0;border-radius:9px;padding:9px 14px;background:var(--blue);color:#ffffff;font-weight:700;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.55;cursor:wait}
+  button.ghost{background:#eef1f7;color:var(--txt)}
+  button.danger{background:rgba(217,69,90,.11);color:var(--err);border:1px solid rgba(217,69,90,.3)}
+  input,select{background:var(--surface);color:var(--txt);border:1px solid var(--line);border-radius:9px;padding:9px 11px;min-height:39px}
+  input{min-width:210px}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+  .top{max-width:1440px;margin:auto;display:flex;align-items:center;gap:24px;padding:13px 22px}
+  .brand{font-size:16px;font-weight:800;white-space:nowrap}
+  nav{display:flex;gap:5px;overflow-x:auto}
+  nav a{color:var(--mut);padding:7px 12px;border-radius:8px;cursor:pointer;font-weight:650;white-space:nowrap}
+  nav a.active{background:#e4ecfb;color:#1f4fd0}
+  .server{margin-left:auto;display:flex;gap:7px;align-items:center;color:var(--mut);font-size:12px;white-space:nowrap}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}
+  .dot.ok{background:var(--ok)} .dot.err{background:var(--err)}
+  main{max-width:1440px;margin:auto;padding:24px 22px 60px}
+  h1{font-size:24px;margin:0 0 4px}
+  h2{font-size:17px;margin:0 0 12px}
+  h3{font-size:14px;margin:0 0 8px}
+  .sub{color:var(--mut);margin:0 0 20px}
+  .tiny{font-size:12px;color:var(--mut)}
+  .muted{color:var(--mut)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:0 0 16px}
+  .toolbar .count{margin-left:auto;color:var(--mut)}
+  .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+  .kpi{box-shadow:0 1px 2px rgba(27,34,51,.04);background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px;cursor:pointer}
+  .kpi:hover{border-color:#c3d0e6;background:#f2f6fd}
+  .kpi .n{font-size:28px;font-weight:850;line-height:1.1;margin-bottom:5px}
+  .kpi .label{font-weight:700}
+  .kpi .hint{color:var(--mut);font-size:12px;margin-top:4px}
+  .kpi.warn .n{color:var(--warn)} .kpi.err .n{color:var(--err)} .kpi.ok .n{color:var(--ok)}
+  .two{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,.75fr);gap:16px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(27,34,51,.04)}
+  .card-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .card-head > :last-child{margin-left:auto}
+  .loading,.empty{text-align:center;color:var(--mut);padding:34px 18px}
+  .table-scroll{overflow:auto;border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{position:sticky;top:0;background:var(--surface);color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.035em;z-index:1}
+  tbody tr.click{cursor:pointer}
+  tbody tr.click:hover{background:#f5f8fd}
+  .fio{font-weight:750;color:var(--txt)}
+  .badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:750;white-space:nowrap}
+  .b-ok{background:rgba(18,160,106,.12);color:var(--ok)}
+  .b-warn{background:rgba(184,115,10,.13);color:var(--warn)}
+  .b-err{background:rgba(217,69,90,.11);color:var(--err)}
+  .b-blue{background:rgba(61,123,253,.12);color:var(--blue)}
+  .b-purple{background:rgba(123,82,216,.12);color:var(--purple)}
+  .b-mut{background:#eef1f7;color:var(--mut)}
+  .score{font-variant-numeric:tabular-nums;font-weight:850}
+  .action{font-weight:700}
+  .action.resume{color:var(--warn)} .action.anketa{color:var(--purple)} .action.done{color:var(--ok)}
+  .issue{border-left:4px solid var(--line);padding:13px 14px;background:var(--surface2);border-radius:9px;margin-bottom:9px}
+  .issue.error{border-color:var(--err)} .issue.warn{border-color:var(--warn)} .issue.info{border-color:var(--blue)}
+  .issue-title{font-weight:800;margin-bottom:3px}
+  .issue-action{color:#3f4756;margin-top:7px}
+  details{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:10px;background:#fafbfe}
+  summary{cursor:pointer;font-weight:700}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field label{display:block;color:var(--mut);font-size:12px;margin-bottom:5px}
+  .field input,.field select{width:100%}
+  .overlay{position:fixed;inset:0;background:rgba(27,34,51,.45);display:flex;justify-content:flex-end;z-index:30}
+  .drawer{position:relative;width:min(700px,100%);height:100%;overflow:auto;background:var(--bg);border-left:1px solid var(--line);padding:24px}
+  .drawer .close{position:absolute;right:20px;top:18px}
+  .drawer h2{padding-right:90px}
+  .kv{display:grid;grid-template-columns:135px 1fr;gap:10px;margin:6px 0}
+  .kv b{color:var(--mut);font-weight:600}
+  .section{border-top:1px solid var(--line);margin-top:18px;padding-top:16px}
+  .prose{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:12px}
+  .msg{max-width:84%;white-space:pre-wrap;word-break:break-word;padding:9px 12px;border-radius:12px;margin:8px 0}
+  .msg.emp{margin-left:auto;background:#e4ecfb}.msg.app{background:#f0f2f7}
+  .msg-meta{display:block;color:var(--mut);font-size:11px;margin-top:4px}
+  .notice{padding:12px 14px;border-radius:9px;background:rgba(184,115,10,.09);border:1px solid rgba(184,115,10,.28);color:#8a5a00;margin-bottom:14px}
+  .login{width:360px;max-width:92%;margin:auto}
+  @media(max-width:980px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.server span{display:none}}
+  @media(max-width:650px){main{padding:18px 12px}.top{padding:10px 12px;gap:10px}.brand{display:none}.grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.toolbar>*{width:100%}.toolbar .count{margin-left:0}.kv{grid-template-columns:1fr;gap:2px}}
+  /* ---- Анкеты: простые экраны без всплывающих окон ---- */
+  .back{margin-bottom:14px;padding:7px 12px}
+  .links{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .qa-table td{vertical-align:top;line-height:1.5}
+  .qa-table td.ans{white-space:pre-wrap;color:var(--txt)}
+  .qa-table tbody tr:hover{background:var(--surface2)}
+  /* ---- Мастер создания вакансии ---- */
+  .stepper{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 20px}
+  .stp{display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);
+    border-radius:999px;padding:6px 13px 6px 7px;color:var(--mut);font-size:13px}
+  .stp-n{width:21px;height:21px;border-radius:50%;background:#e8edf6;color:var(--mut);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none}
+  .stp.now{border-color:var(--blue);color:var(--txt);font-weight:700;background:#eef4ff}
+  .stp.now .stp-n{background:var(--blue);color:#fff}
+  .stp.done{color:var(--ok);border-color:rgba(18,160,106,.3);background:rgba(18,160,106,.07)}
+  .stp.done .stp-n{background:var(--ok);color:#fff}
+  .hintbox{background:#eef4ff;border:1px solid #d3e0fb;border-radius:11px;padding:14px 16px;margin-bottom:16px;font-size:14px}
+  .hintbox ol{margin:8px 0 0;padding-left:20px}
+  .hintbox li{margin-bottom:5px}
+  .hintbox code{background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:12px;word-break:break-all}
+  .okbox{background:rgba(18,160,106,.08);border:1px solid rgba(18,160,106,.28);border-radius:11px;padding:14px 16px;margin-top:14px}
+  .errbox{background:rgba(217,69,90,.07);border:1px solid rgba(217,69,90,.3);border-radius:11px;padding:14px 16px;margin-top:14px;color:#a8293c}
+  .opt-row{display:flex;gap:11px;align-items:flex-start;border:1px solid var(--line);border-radius:11px;
+    padding:14px 16px;margin-bottom:9px;cursor:pointer;background:var(--surface2)}
+  .opt-row:hover{border-color:#c3d0e6}
+  .opt-row input{margin-top:3px;width:17px;height:17px;accent-color:var(--blue);flex:none}
+  .opt-row:has(input:checked){border-color:var(--blue);background:#eef4ff}
+  .row-del{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .row-del input{flex:1;min-width:0}
+  .pill-warn{background:rgba(184,115,10,.13);color:var(--warn)}
+  .okfinal{text-align:center;padding:40px 20px}
+  .okfinal-icon{font-size:52px;margin-bottom:8px}
+  .block .kv{grid-template-columns:120px 1fr}
+  .block .msg{max-width:92%}
+  .fcard{box-shadow:0 1px 2px rgba(27,34,51,.04);display:flex;gap:18px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:20px 22px;margin-bottom:12px;flex-wrap:wrap}
+  .fcard-main{flex:1;min-width:260px}
+  .fcard-title{font-size:17px;font-weight:750;color:var(--txt);margin-bottom:7px}
+  .fcard-meta{display:flex;flex-wrap:wrap;gap:12px;align-items:center;color:var(--mut);font-size:13px}
+  .fcard-meta b{color:var(--txt)}
+  .fcard-link{margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .fcard-link code{background:#f5f7fb;border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+    font-size:12px;color:#3a5fa8;word-break:break-all}
+  .fcard-actions{display:flex;flex-direction:column;gap:8px;min-width:190px}
+  .fcard-actions button{width:100%}
+  .pill{border-radius:999px;padding:3px 11px;font-size:12px;font-weight:700}
+  .pill-ok{background:rgba(18,160,106,.12);color:var(--ok)}
+  .pill-draft{background:#eef1f7;color:var(--mut)}
+  .mini{background:#eef1f7;color:var(--txt);border:1px solid var(--line);border-radius:7px;
+    padding:5px 10px;font-size:12px;font-weight:650;cursor:pointer;text-decoration:none;display:inline-block}
+  .mini:hover{filter:brightness(1.3);text-decoration:none}
+  .mini.del{color:var(--err)}
+  .mini:disabled{opacity:.35;cursor:default}
+  .fempty{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:56px 24px;text-align:center}
+  .fempty-icon{font-size:40px;margin-bottom:10px}
+  .fempty h2{margin:0 0 6px}
+  .block{box-shadow:0 1px 2px rgba(27,34,51,.04);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:14px}
+  .block-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px}
+  .step{flex:none;width:26px;height:26px;border-radius:50%;background:var(--blue);color:#ffffff;
+    font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .block .field{margin-bottom:13px}
+  .block .field:last-child{margin-bottom:0}
+  .field textarea{width:100%;background:var(--surface2);color:var(--txt);border:1px solid var(--line);
+    border-radius:9px;padding:9px 11px;font:inherit;resize:vertical}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .qitem{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:11px}
+  .qitem-head{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+  .qnum{flex:none;width:24px;height:24px;border-radius:7px;background:#e8edf6;color:var(--mut);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:750}
+  .qtitle{flex:1;min-width:0;font-weight:650}
+  .qmove{display:flex;gap:5px;flex:none}
+  .wide{width:100%}
+  .savebar{position:sticky;bottom:0;background:rgba(255,255,255,.95);backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);padding:14px 0;display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:6px}
+  .savebar-btns{margin-left:auto;display:flex;gap:9px;flex-wrap:wrap}
+  .tiny.bad{color:var(--err);font-weight:650}
+  .linkbanner{background:rgba(18,160,106,.09);border:1px solid rgba(18,160,106,.28);border-radius:12px;
+    padding:16px 18px;margin-bottom:16px}
+  .linkbanner-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:9px}
+  .linkbanner code{background:#f5f7fb;border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+    font-size:12px;color:#3a5fa8;word-break:break-all}
+  .rcard{box-shadow:0 1px 2px rgba(27,34,51,.04);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:12px}
+  .rcard-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap}
+  .rcard-head > :last-child{margin-left:auto}
+  .rcard-name{font-size:16px;font-weight:750;color:var(--txt)}
+  .qa{border-top:1px solid var(--line);padding:11px 0}
+  .qa-q{color:var(--mut);font-size:13px;margin-bottom:3px}
+  .qa-a{white-space:pre-wrap}
+  /* Главный экран: дела на сегодня — крупная строка-задача с числом слева */
+  .task{display:flex;align-items:center;gap:16px;width:100%;text-align:left;background:var(--surface);
+    border:1px solid var(--line);border-radius:13px;padding:18px 20px;margin-bottom:10px;cursor:pointer;
+    box-shadow:0 1px 2px rgba(27,34,51,.04);color:var(--txt);font:inherit}
+  .task:hover{border-color:#c3d0e6;background:#f4f8ff}
+  .task-n{font-size:30px;font-weight:850;line-height:1;min-width:52px;text-align:center}
+  .task-n.warn{color:var(--warn)} .task-n.err{color:var(--err)} .task-n.ok{color:var(--ok)} .task-n.blue{color:var(--blue)}
+  .task-title{font-weight:750;font-size:15px;margin-bottom:3px}
+  .task-hint{color:var(--mut);font-size:13px}
+  .task-go{margin-left:auto;color:var(--mut);font-size:20px}
+  .allclear{text-align:center;padding:40px 18px;background:var(--surface);border:1px solid var(--line);border-radius:13px}
+  .allclear .big{font-size:38px;margin-bottom:10px}
+  /* Настройки: три вкладки внутри одного раздела */
+  .tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+  .tabs button{background:#eef1f7;color:var(--mut);font-weight:700}
+  .tabs button.on{background:#e4ecfb;color:#1f4fd0}
+  /* Собеседования: день — карточка, внутри строки со временем */
+  .cal-day{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;background:var(--surface)}
+  .cal-day.today{border-color:#3d7bfd;background:#f4f8ff}
+  .cal-day.past{opacity:.62}
+  .cal-date{display:flex;align-items:center;gap:9px;font-weight:750;margin-bottom:10px}
+  .cal-slot{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line)}
+  .cal-time{font-weight:800;font-variant-numeric:tabular-nums;min-width:56px}
+  .cal-who{font-weight:650}
+  .cal-vac{color:var(--mut);font-size:12px}
+  .cal-links{margin-left:auto;display:flex;gap:8px;white-space:nowrap}
+  @media(max-width:650px){.cal-slot{flex-wrap:wrap}.cal-links{margin-left:0;width:100%}.row2{grid-template-columns:1fr}.fcard-actions{min-width:100%}.savebar-btns{margin-left:0;width:100%}.savebar-btns button{flex:1}}
+
+  /* ======================================================================
+     ОФОРМЛЕНИЕ. Идёт последним и переопределяет базовые стили выше:
+     разметка и классы не меняются, меняется только внешний вид.
+     ====================================================================== */
+  :root{
+    --bg:#f5f6f9;--surface:#fff;--surface2:#f7f8fb;--line:#e6e8ef;
+    --txt:#161b26;--mut:#6d7484;--blue:#3667f0;--ok:#0f9d63;--warn:#b5730c;--err:#d63b52;
+    --ring:0 0 0 3px rgba(54,103,240,.16);
+    --shadow:0 1px 2px rgba(22,27,38,.05), 0 8px 24px -14px rgba(22,27,38,.18);
+    --shadow-lg:0 2px 4px rgba(22,27,38,.05), 0 20px 40px -22px rgba(22,27,38,.28);
+  }
+  body{font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;
+    background:linear-gradient(180deg,#f7f8fb 0,var(--bg) 220px) no-repeat,var(--bg)}
+  ::selection{background:rgba(54,103,240,.16)}
+  *::-webkit-scrollbar{width:10px;height:10px}
+  *::-webkit-scrollbar-thumb{background:#d5d9e3;border-radius:10px;border:3px solid transparent;background-clip:content-box}
+  *::-webkit-scrollbar-thumb:hover{background:#c2c7d4;background-clip:content-box}
+
+  /* Шапка: логотип-плашка и навигация сегментами */
+  header{background:rgba(255,255,255,.82);backdrop-filter:saturate(1.6) blur(14px);border-bottom:1px solid rgba(230,232,239,.9)}
+  .top{padding:11px 26px;gap:20px}
+  .brand{display:flex;align-items:center;gap:9px;font-size:15px;letter-spacing:-.01em}
+  .brand::before{content:"HR";display:grid;place-items:center;width:28px;height:28px;border-radius:9px;
+    background:linear-gradient(135deg,#4a76f5,#2f5bdc);color:#fff;font-size:11px;font-weight:800;letter-spacing:.02em;
+    box-shadow:0 4px 10px -4px rgba(47,91,220,.7)}
+  nav{background:#eef0f5;padding:3px;border-radius:11px;gap:2px}
+  nav a{padding:7px 15px;border-radius:9px;font-size:14px;transition:background .16s,color .16s}
+  nav a:hover{color:var(--txt);text-decoration:none}
+  nav a.active{background:var(--surface);color:var(--txt);box-shadow:0 1px 2px rgba(22,27,38,.09)}
+  .server{font-size:12.5px}
+
+  /* Ширина чтения: длинные строки текста утомляют, поэтому уже, чем было */
+  main{max-width:1180px;padding:30px 26px 72px}
+  h1{font-size:27px;letter-spacing:-.022em;font-weight:800;margin-bottom:6px}
+  h2{font-size:17px;letter-spacing:-.012em;font-weight:750}
+  .sub{font-size:14.5px;margin-bottom:24px}
+  .tiny{font-size:12.5px}
+
+  /* Кнопки */
+  button{border-radius:10px;padding:10px 16px;font-weight:700;letter-spacing:-.005em;
+    transition:transform .12s,box-shadow .16s,background .16s,filter .16s}
+  button:not(.ghost):not(.mini):not(.danger){box-shadow:0 1px 2px rgba(22,27,38,.08),0 6px 14px -8px rgba(54,103,240,.75)}
+  button:hover{filter:none;background:#2a58dd}
+  button.ghost{background:#eef0f5;color:var(--txt)}
+  button.ghost:hover{background:#e4e7ef}
+  button:active{transform:translateY(1px)}
+  button:focus-visible,input:focus-visible,select:focus-visible,.task:focus-visible{outline:0;box-shadow:var(--ring)}
+  input,select{border-radius:10px;transition:border-color .16s,box-shadow .16s}
+  input:focus,select:focus{outline:0;border-color:var(--blue);box-shadow:var(--ring)}
+
+  /* Карточки */
+  .card,.fcard,.block,.rcard,.cal-day,.allclear,.fempty{border-radius:16px;box-shadow:var(--shadow)}
+  .card{padding:22px 24px}
+  .card-head{margin-bottom:16px}
+
+  /* Задачи на главном экране: число в цветном кружке, стрелка едет при наведении */
+  .task{border-radius:16px;padding:18px 22px;gap:18px;box-shadow:var(--shadow);
+    transition:transform .14s,box-shadow .18s,border-color .18s,background .18s}
+  .task:hover{background:var(--surface);border-color:#cfd8ea;transform:translateY(-1px);box-shadow:var(--shadow-lg)}
+  .task-n{min-width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-size:23px;font-weight:800}
+  .task-n.blue{background:rgba(54,103,240,.1)}
+  .task-n.warn{background:rgba(181,115,12,.11)}
+  .task-n.ok{background:rgba(15,157,99,.11)}
+  .task-n.err{background:rgba(214,59,82,.1)}
+  .task-title{font-size:15.5px;font-weight:750;letter-spacing:-.012em}
+  .task-go{font-size:22px;transition:transform .16s,color .16s}
+  .task:hover .task-go{transform:translateX(3px);color:var(--blue)}
+  .allclear{padding:52px 24px}
+  .allclear .big{font-size:34px;width:66px;height:66px;margin:0 auto 14px;border-radius:50%;
+    display:grid;place-items:center;background:rgba(15,157,99,.11);color:var(--ok)}
+
+  /* Вкладки настроек */
+  .tabs{background:#eef0f5;padding:3px;border-radius:12px;display:inline-flex;gap:2px;margin-bottom:22px}
+  .tabs button{background:transparent;box-shadow:none;padding:8px 16px;border-radius:9px;font-size:14px}
+  .tabs button:hover{background:rgba(255,255,255,.6);color:var(--txt)}
+  .tabs button.on{background:var(--surface);color:var(--txt);box-shadow:0 1px 2px rgba(22,27,38,.09)}
+
+  /* Таблицы */
+  table{font-size:14px}
+  th{font-size:11px;letter-spacing:.06em;font-weight:750;padding:12px 14px;border-bottom:1px solid var(--line)}
+  td{padding:14px}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr.click:hover{background:#f4f7ff}
+
+  /* Плашки и бейджи */
+  .badge,.pill{padding:4px 11px;font-size:11.5px;letter-spacing:-.005em}
+  .mini{border-radius:8px;padding:6px 11px;transition:background .16s,border-color .16s}
+  .mini:hover{filter:none;background:#e4e7ef;border-color:#d6dae4}
+
+  /* Календарь */
+  .cal-day{padding:18px 20px}
+  .cal-day.today{border-color:rgba(54,103,240,.45);background:linear-gradient(180deg,#f5f8ff,#fff)}
+  .cal-time{font-size:15px}
+  .cal-slot{padding:11px 0}
+
+  /* Вакансии */
+  .fcard{padding:22px 24px}
+  .fcard-title{font-size:16.5px;letter-spacing:-.014em}
+
+  /* Внутри «Настроек» вкладка уже названа — второй заголовок убираем */
+  #settingsBody > h1,#settingsBody > .sub{display:none}
+  #settingsBody > div > h1,#settingsBody > div > .sub{display:none}
+
+  /* Панель фильтров — отдельной плашкой, поля не растягиваются на всю ширину */
+  .toolbar{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:12px 14px;gap:10px;box-shadow:var(--shadow);margin-bottom:18px}
+  .toolbar select{max-width:280px;min-width:170px}
+  .toolbar input{min-width:200px;flex:1;max-width:320px}
+  .toolbar .count{font-size:13px}
+
+  /* Пустые состояния — спокойный блок, а не голая строка */
+  .empty{padding:44px 20px;color:var(--mut)}
+  .card > .empty:only-child{padding:52px 20px}
+
+  .cal-links .tiny{color:var(--mut)}
+
+  @media(max-width:760px){
+    .toolbar{padding:10px}
+    .toolbar select,.toolbar input{max-width:100%;width:100%}
+    .top{padding:10px 16px;gap:12px}
+    main{padding:22px 16px 60px}
+    h1{font-size:23px}
+    nav{background:transparent;padding:0}
+    nav a.active{background:#e7ecfb;color:#2a58dd}
+    .task{padding:16px;gap:14px}
+    .task-n{min-width:46px;height:46px;font-size:19px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="brand">HR-панель</div>
+    <nav>
+      <a data-view="today" class="active">Сегодня</a>
+      <a data-view="candidates">Отклики</a>
+      <a data-view="calendar">Собеседования</a>
+      <a data-view="settings">Настройки</a>
+    </nav>
+    <div class="server"><span class="dot" id="dot"></span><span id="serverText">проверка…</span><button class="ghost" id="logout" style="display:none;padding:5px 9px">выйти</button></div>
+  </div>
+</header>
+<main id="app"></main>
+<div id="modal"></div>
+<div id="authbox"></div>
+
+<script>
+const app=document.getElementById('app');
+const modal=document.getElementById('modal');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const _fetch=window.fetch.bind(window);
+let AUTH_SHOWN=false,CANDS=[],DIAG=null,LOGS=null,REG=null,ACCOUNTS=[],CURRENT='today',CAND_FILTER='attention';
+
+window.fetch=async(...args)=>{
+  const response=await _fetch(...args);
+  if(response.status===401){try{const body=await response.clone().json();if(body?.auth)showLogin();}catch{}}
+  return response;
+};
+async function api(path,options){
+  const response=await fetch('api/'+path,options);
+  let body={};try{body=await response.json();}catch{}
+  if(!response.ok||body.ok===false)throw new Error(body.error||`HTTP ${response.status}`);
+  return body;
+}
+function showLogin(message=''){
+  if(AUTH_SHOWN)return;
+  AUTH_SHOWN=true;
+  document.getElementById('authbox').innerHTML=`<div class="overlay" style="align-items:center;justify-content:center"><div class="card login">
+    <h2>Вход в HR-панель</h2><p class="sub">Введите логин и пароль.</p>
+    <input id="lgUser" value="admin" autocomplete="username" style="width:100%;margin-bottom:9px">
+    <input id="lgPass" type="password" autocomplete="current-password" placeholder="Пароль" style="width:100%;margin-bottom:12px">
+    <button id="lgBtn" style="width:100%">Войти</button><div id="lgMsg" class="tiny" style="color:var(--err);margin-top:8px">${esc(message)}</div>
+  </div></div>`;
+  const login=async()=>{
+    try{
+      document.getElementById('lgMsg').textContent='';
+      await api('login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:document.getElementById('lgUser').value.trim(),password:document.getElementById('lgPass').value})});
+      location.reload();
+    }catch(e){document.getElementById('lgMsg').textContent=e.message}
+  };
+  document.getElementById('lgBtn').onclick=login;
+  document.getElementById('lgPass').onkeydown=e=>{if(e.key==='Enter')login()};
+  document.getElementById('lgPass').focus();
+}
+async function checkSession(){
+  try{
+    const session=await api('session');
+    if(session.authEnabled){document.getElementById('logout').style.display='inline-block';if(!session.authed){showLogin();return false}}
+  }catch{}
+  return true;
+}
+document.getElementById('logout').onclick=async()=>{try{await api('logout',{method:'POST'})}catch{}location.reload()};
+
+function badge(text,kind='mut'){return `<span class="badge b-${kind}">${esc(text)}</span>`}
+function statusBadge(status){
+  const value=String(status||'').trim(),text=value.toLowerCase();
+  if(!value)return badge('—');
+  if(text.includes('архив'))return badge(value,'warn');
+  if(text.includes('подход')&&!text.includes('не '))return badge(value,'ok');
+  if(text.includes('руч')||text.includes('ожид'))return badge(value,'warn');
+  if(text.includes('отказ')||text.includes('не подход'))return badge(value,'err');
+  if(text.includes('первич')||text.includes('собесед'))return badge(value,'blue');
+  return badge(value);
+}
+function scoreCell(num,raw){
+  if(raw==null||raw==='')return '<span class="tiny">—</span>';
+  return badge(raw,num>=7?'ok':num>=5?'warn':'err').replace('badge ','badge score ');
+}
+function modeBadge(mode){return mode==='LIVE'?badge('LIVE','ok'):mode==='DRY'?badge('DRY','warn'):badge('OFF')}
+function tableBadge(status){return status==='ok'?badge('таблица OK','ok'):status==='error'?badge('ошибка таблицы','err'):status==='warn'?badge('есть замечания','warn'):badge('не настроена')}
+function hhBadge(status){return status==='active'?badge('активна на HH','ok'):status==='archived'?badge('архив HH','warn'):status==='not-configured'?badge('не настроена'):badge('HH не проверен','warn')}
+function parseDate(value){
+  const text=String(value||'').trim();let m=text.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?/);
+  if(m)return new Date(+m[3],+m[2]-1,+m[1],+(m[4]||0),+(m[5]||0)).getTime();
+  const ts=Date.parse(text);return Number.isFinite(ts)?ts:0;
+}
+function lastDate(c){return Math.max(parseDate(c.resume?.date),parseDate(c.anketa?.date))}
+function fmtDate(c){
+  const ts=lastDate(c);if(!ts)return '—';
+  return new Date(ts).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function workflow(c){
+  if(c.anketa?.sent)return {key:'done',label:'Решение уже отправлено',cls:'done'};
+  if(c.anketa?.hrAction==='Ожидание')return {key:'anketa',label:'Решить по анкете',cls:'anketa'};
+  if(c.resume?.status==='Ручная проверка')return {key:'resume',label:'Проверить резюме',cls:'resume'};
+  if(c.anketa?.hrAction==='Подходит'||c.anketa?.hrAction==='Не подходит')return {key:'queued',label:'Решение принято, ждём бота',cls:'done'};
+  if(c.resume?.status==='Подходит'&&!c.anketa)return {key:'form',label:'Анкета ещё не заполнена',cls:''};
+  if(c.resume?.status==='Отказ')return {key:'rejected',label:'Отказ',cls:''};
+  if(c.anketa)return {key:'filled',label:'Анкета заполнена',cls:''};
+  return {key:'other',label:'Без следующего действия',cls:''};
+}
+function isAttention(c){const key=workflow(c).key;return key==='resume'||key==='anketa'}
+async function ensureCandidates(force=false){if(CANDS.length&&!force)return CANDS;const data=await api('candidates'+(force?'?refresh=1':''));CANDS=data.candidates||[];return CANDS}
+async function ensureDiagnostics(force=false){if(DIAG&&!force)return DIAG;DIAG=await api('diagnostics'+(force?'?refresh=1':''));return DIAG}
+async function ensureLogs(){if(LOGS)return LOGS;LOGS=await api('errors');return LOGS}
+async function ensureRegistry(){if(REG)return REG;REG=await api('vacancies');ACCOUNTS=REG.accounts||[];return REG}
+function goCandidates(filter){CAND_FILTER=filter;render('candidates')}
+
+function overviewView(){
+  return `<h1>Обзор</h1><p class="sub">Что требует решения сегодня, где находятся отклики и всё ли работает.</p>
+  <div id="overviewMain"><div class="loading">Собираю сводку…</div></div>`;
+}
+async function loadOverview(){
+  const root=document.getElementById('overviewMain');
+  try{
+    await ensureCandidates();
+    const resume=CANDS.filter(c=>workflow(c).key==='resume').length;
+    const anketa=CANDS.filter(c=>workflow(c).key==='anketa').length;
+    const filled=CANDS.filter(c=>c.anketa).length;
+    root.innerHTML=`<div class="grid">
+      <div class="kpi warn" data-kpi="resume"><div class="n">${resume}</div><div class="label">Проверить резюме</div><div class="hint">кандидаты с баллом 5–6</div></div>
+      <div class="kpi warn" data-kpi="anketa"><div class="n">${anketa}</div><div class="label">Решить по анкете</div><div class="hint">стоит «Ожидание»</div></div>
+      <div class="kpi ok" data-kpi="filled"><div class="n">${filled}</div><div class="label">Анкет заполнено</div><div class="hint">по всем вакансиям</div></div>
+      <div class="kpi" data-kpi="all"><div class="n">${CANDS.length}</div><div class="label">Всего откликов</div><div class="hint">в Google-таблицах</div></div>
+    </div>
+    <div class="two">
+      <div class="card"><div class="card-head"><div><h2>Требует внимания</h2><div class="tiny">Сначала анкеты, затем ручная проверка резюме</div></div><button class="ghost" id="allAttention">Открыть все</button></div><div id="attentionList"></div></div>
+      <div><div class="card"><h2>Состояние системы</h2><div id="healthBox"><div class="loading">Проверяю таблицы и HH…</div></div></div></div>
+    </div>
+    <div class="card"><div class="card-head"><div><h2>Вакансии и отклики</h2><div class="tiny">Сводка по каждой вакансии</div></div><button class="ghost" id="openVacancies">Управление вакансиями</button></div><div id="vacancySummary"><div class="loading">Загрузка…</div></div></div>`;
+    root.querySelectorAll('[data-kpi]').forEach(el=>el.onclick=()=>goCandidates(el.dataset.kpi));
+    document.getElementById('allAttention').onclick=()=>goCandidates('attention');
+    document.getElementById('openVacancies').onclick=()=>goSettings('vacancies');
+    renderAttention();
+    try{await ensureDiagnostics();renderHealth();renderVacancySummary()}catch(e){
+      document.getElementById('healthBox').innerHTML=`<div class="issue error"><div class="issue-title">Диагностика не загрузилась</div>${esc(e.message)}</div>`;
+      document.getElementById('vacancySummary').innerHTML='<div class="empty">Не удалось проверить вакансии.</div>';
+    }
+  }catch(e){root.innerHTML=`<div class="issue error"><div class="issue-title">Не удалось загрузить отклики</div>${esc(e.message)}</div>`}
+}
+function renderAttention(){
+  const rows=CANDS.filter(isAttention).sort((a,b)=>{
+    const aw=workflow(a).key==='anketa'?0:1,bw=workflow(b).key==='anketa'?0:1;
+    return aw-bw||lastDate(b)-lastDate(a);
+  }).slice(0,14);
+  document.getElementById('attentionList').innerHTML=rows.length?`<div class="table-scroll"><table><thead><tr><th>Кандидат</th><th>Вакансия</th><th>Что сделать</th><th>Балл</th></tr></thead><tbody>
+    ${rows.map(c=>`<tr class="click" data-i="${CANDS.indexOf(c)}"><td><div class="fio">${esc(c.fio)}</div><div class="tiny">${fmtDate(c)}</div></td><td class="tiny">${esc(c.vacancyName)}</td><td><span class="action ${workflow(c).cls}">${workflow(c).label}</span></td><td>${workflow(c).key==='anketa'?scoreCell(c.anketa?.scoreNum,c.anketa?.score):scoreCell(c.resume?.scoreNum,c.resume?.score)}</td></tr>`).join('')}
+  </tbody></table></div>`:'<div class="empty">Нет кандидатов, ожидающих решения.</div>';
+  document.querySelectorAll('#attentionList tr[data-i]').forEach(tr=>tr.onclick=()=>openCard(CANDS[+tr.dataset.i]));
+}
+function renderHealth(){
+  const box=document.getElementById('healthBox'),s=DIAG.summary;
+  if(!s.errors&&!s.warnings){box.innerHTML=`${badge('всё работает','ok')}<p class="muted">Таблицы, аккаунты и вакансии проверены.</p>`;return}
+  box.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:12px">${badge(`${s.errors} ошибок`,s.errors?'err':'mut')}${badge(`${s.warnings} предупреждений`,s.warnings?'warn':'mut')}</div>
+    ${(DIAG.issues||[]).filter(i=>i.severity!=='info').slice(0,4).map(issue=>`<div class="issue ${issue.severity}"><div class="issue-title">${esc(issue.title)}</div><div class="tiny">${esc(issue.vacancy)}</div></div>`).join('')}
+    <button class="ghost" id="openSystem" style="width:100%;margin-top:8px">Открыть проверку системы</button>`;
+  document.getElementById('openSystem').onclick=()=>goSettings('system');
+}
+function vacancyCounts(){
+  const map={};
+  CANDS.forEach(c=>{const v=map[c.vacancyName]||(map[c.vacancyName]={all:0,resume:0,anketa:0,filled:0});v.all++;if(workflow(c).key==='resume')v.resume++;if(workflow(c).key==='anketa')v.anketa++;if(c.anketa)v.filled++});
+  return map;
+}
+function renderVacancySummary(){
+  const counts=vacancyCounts();
+  document.getElementById('vacancySummary').innerHTML=`<div class="table-scroll"><table><thead><tr><th>Вакансия</th><th>Откликов</th><th>Резюме на проверку</th><th>Анкеты на решение</th><th>HH</th><th>Бот</th><th>Таблица</th></tr></thead><tbody>
+    ${DIAG.vacancies.map(v=>{const c=counts[v.name]||{};return `<tr>
+      <td><div class="fio">${esc(v.name)}</div><div class="tiny">${esc(v.responsible||'ответственный не указан')}</div></td>
+      <td class="score">${c.all||0}</td><td>${c.resume?badge(c.resume,'warn'):'—'}</td><td>${c.anketa?badge(c.anketa,'warn'):'—'}</td>
+      <td>${hhBadge(v.hhStatus)}</td><td>${modeBadge(v.responsesMode)}</td><td>${tableBadge(v.tableStatus)}</td></tr>`}).join('')}
+  </tbody></table></div>`;
+}
+
+function candidatesView(){
+  return `<h1>Отклики</h1><p class="sub">Единый список. По умолчанию показаны только кандидаты, по которым требуется решение человека.</p>
+  <div class="toolbar">
+    <select id="fVac"><option value="">Все вакансии</option></select>
+    <select id="fFlow">
+      <option value="attention">Требуют решения</option><option value="resume">Проверить резюме</option><option value="anketa">Решить по анкете</option>
+      <option value="filled">Анкета заполнена</option><option value="form">Анкета не заполнена</option><option value="done">Решение отправлено</option>
+      <option value="rejected">Отказы</option><option value="all">Все отклики</option>
+    </select>
+    <input id="fSearch" placeholder="Поиск по ФИО">
+    <button class="ghost" id="btnRefresh">Обновить данные</button><span class="count" id="candCount"></span>
+  </div><div class="card" id="candidateTable"><div class="loading">Загрузка откликов…</div></div>`;
+}
+async function loadCandidatesView(force=false){
+  try{
+    await ensureCandidates(force);
+    const vac=document.getElementById('fVac');
+    const current=vac.value;
+    const names=[...new Set(CANDS.map(c=>c.vacancyName))].sort((a,b)=>a.localeCompare(b,'ru'));
+    vac.innerHTML='<option value="">Все вакансии</option>'+names.map(name=>`<option${name===current?' selected':''}>${esc(name)}</option>`).join('');
+    document.getElementById('fFlow').value=CAND_FILTER;
+    applyCandidateFilters();
+  }catch(e){document.getElementById('candidateTable').innerHTML=`<div class="issue error">${esc(e.message)}</div>`}
+}
+function applyCandidateFilters(){
+  const vacancy=document.getElementById('fVac').value,flow=document.getElementById('fFlow').value,query=document.getElementById('fSearch').value.trim().toLowerCase();
+  CAND_FILTER=flow;
+  const rows=CANDS.filter(c=>{
+    if(vacancy&&c.vacancyName!==vacancy)return false;
+    if(query&&!c.fio.toLowerCase().includes(query))return false;
+    const key=workflow(c).key;
+    if(flow==='attention'&&!isAttention(c))return false;
+    if(flow==='resume'&&key!=='resume')return false;if(flow==='anketa'&&key!=='anketa')return false;
+    if(flow==='filled'&&!c.anketa)return false;if(flow==='form'&&key!=='form')return false;
+    if(flow==='done'&&key!=='done')return false;if(flow==='rejected'&&key!=='rejected')return false;
+    return true;
+  }).sort((a,b)=>lastDate(b)-lastDate(a)||a.fio.localeCompare(b.fio,'ru'));
+  document.getElementById('candCount').textContent=`${rows.length} из ${CANDS.length}`;
+  const wrap=document.getElementById('candidateTable');
+  if(!rows.length){wrap.innerHTML='<div class="empty">По выбранным фильтрам ничего нет.</div>';return}
+  wrap.innerHTML=`<div class="table-scroll"><table><thead><tr><th>Кандидат</th><th>Вакансия</th><th>Последняя дата</th><th>Резюме</th><th>Анкета</th><th>Что делать</th></tr></thead><tbody>
+    ${rows.map(c=>`<tr class="click" data-i="${CANDS.indexOf(c)}">
+      <td><div class="fio">${esc(c.fio)}</div>${c.resumeUrl?`<a class="tiny" href="${esc(c.resumeUrl)}" target="_blank" onclick="event.stopPropagation()">резюме на HH ↗</a>`:''}</td>
+      <td class="tiny">${esc(c.vacancyName)}</td><td class="tiny">${fmtDate(c)}</td>
+      <td>${scoreCell(c.resume?.scoreNum,c.resume?.score)}<div style="margin-top:5px">${statusBadge(c.resume?.status)}</div></td>
+      <td>${c.anketa?`${scoreCell(c.anketa.scoreNum,c.anketa.score)}<div style="margin-top:5px">${statusBadge(c.anketa.hrAction)}</div>`:'<span class="tiny">не заполнена</span>'}</td>
+      <td><span class="action ${workflow(c).cls}">${esc(workflow(c).label)}</span></td></tr>`).join('')}
+  </tbody></table></div>`;
+  wrap.querySelectorAll('tr[data-i]').forEach(tr=>tr.onclick=()=>openCard(CANDS[+tr.dataset.i]));
+}
+
+function rowLink(c,kind){
+  const gid=kind==='resume'?c.resumeGid:c.anketaGid,row=kind==='resume'?c.resumeRow:c.anketaRow;
+  if(!c.spreadsheetId||gid==null||!row)return '';
+  return `https://docs.google.com/spreadsheets/d/${c.spreadsheetId}/edit#gid=${gid}&range=A${row}`;
+}
+function decisionBlock(c,kind){
+  const opts=kind==='resume'?['Ручная проверка','Подходит','Отказ']:['Ожидание','Подходит','Не подходит'];
+  const current=kind==='resume'?c.resume?.status:c.anketa?.hrAction;
+  return `<div style="margin-bottom:13px"><div class="tiny" style="margin-bottom:5px">${kind==='resume'?'Решение по резюме':'Решение по анкете'}</div><div style="display:flex;gap:8px;align-items:center">
+    <select data-dec="${kind}">${opts.map(opt=>`<option${opt===current?' selected':''}>${opt}</option>`).join('')}</select><button data-save="${kind}">Сохранить</button><span data-msg="${kind}" class="tiny"></span></div></div>`;
+}
+let CARD=null;   // открытый кандидат; null — показываем список
+
+async function openCard(c){
+  CARD=c;
+  const flow=workflow(c),resumeRow=rowLink(c,'resume'),anketaRow=rowLink(c,'anketa');
+  app.innerHTML=`
+    <button class="ghost back" id="backCand">← К списку откликов</button>
+    <h1>${esc(c.fio)}</h1>
+    <p class="sub">${esc(c.vacancyName)}</p>
+    <div class="notice"><b>Что делать сейчас:</b> ${esc(flow.label)}</div>
+
+    <div class="two">
+      <div>
+        <div class="block">
+          <div class="block-head"><span class="step">1</span><div><b>Решение HR</b>
+            <div class="muted tiny">Записывается в Google-таблицу. Если вакансия в боевом режиме, бот отправит сообщение кандидату.</div></div></div>
+          ${c.resume?decisionBlock(c,'resume'):''}${c.anketa?decisionBlock(c,'anketa'):''}
+          ${!c.resume&&!c.anketa?'<div class="muted">Решать пока нечего.</div>':''}
+        </div>
+
+        ${c.resume?.comment?`<div class="block"><div class="block-head"><span class="step">2</span><div><b>Что ИИ увидел в резюме</b></div></div>
+          <div class="prose">${esc(c.resume.comment)}</div></div>`:''}
+        ${c.anketa?.conclusion?`<div class="block"><div class="block-head"><span class="step">3</span><div><b>Что ИИ увидел в анкете</b>
+            ${c.anketa?.score?`<div class="muted tiny">Итоговый балл: <b>${esc(c.anketa.score)}</b></div>`:''}</div>
+            ${c.anketaRow?`<button class="ghost" id="showAnketa">Посмотреть ответы</button>`:''}</div>
+          <div class="prose">${esc(c.anketa.conclusion)}</div>
+          <div id="anketaRows"></div></div>`:''}
+
+        <div class="block"><div class="block-head"><span class="step">💬</span><div><b>Переписка на hh.ru</b></div></div>
+          <div id="chat"><div class="loading">Загружаем переписку…</div></div></div>
+      </div>
+
+      <div>
+        <div class="block">
+          <div class="block-head"><div><b>Коротко</b></div></div>
+          <div class="kv"><b>Резюме</b><span>${scoreCell(c.resume?.scoreNum,c.resume?.score)} ${statusBadge(c.resume?.status)}</span></div>
+          <div class="kv"><b>Дата</b><span>${esc(c.resume?.date||'—')}</span></div>
+          <div class="kv"><b>Анкета</b><span>${c.anketa?`${scoreCell(c.anketa.scoreNum,c.anketa.score)} ${statusBadge(c.anketa.hrAction)}`:'не заполнена'}</span></div>
+          ${c.anketa?.sent?`<div class="kv"><b>Отправлено</b><span>${esc(c.anketa.sent)}</span></div>`:''}
+        </div>
+        <div class="block">
+          <div class="block-head"><div><b>Ссылки</b></div></div>
+          <div class="links">
+            ${c.resumeUrl?`<a class="mini" href="${esc(c.resumeUrl)}" target="_blank">резюме на hh.ru ↗</a>`:'<span class="muted tiny">резюме на HH не привязано</span>'}
+            ${resumeRow?`<a class="mini" href="${resumeRow}" target="_blank">строка резюме в таблице ↗</a>`:''}
+            ${anketaRow?`<a class="mini" href="${anketaRow}" target="_blank">строка анкеты в таблице ↗</a>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('backCand').onclick=()=>{CARD=null;render('candidates')};
+  app.querySelectorAll('[data-save]').forEach(btn=>btn.onclick=()=>saveDecision(c,btn.dataset.save));
+  const showBtn=document.getElementById('showAnketa');
+  if(showBtn)showBtn.onclick=()=>loadAnketaRows(c,showBtn);
+  window.scrollTo({top:0,behavior:'smooth'});
+
+  const chat=document.getElementById('chat');
+  if(!c.resumeId){chat.innerHTML='<div class="issue warn"><div class="issue-title">Нет привязки к отклику на HH</div>С этим кандидатом бот работать не сможет — только вручную.</div>';return}
+  try{
+    const result=await api(`candidate/${encodeURIComponent(c.vacancyId)}/${encodeURIComponent(c.resumeId)}`),d=result.detail;
+    if(!d?.found){chat.innerHTML=`<div class="issue warn">${esc(d?.note||'Отклик не найден на HH.')}</div>`;return}
+    chat.innerHTML=`<div style="margin-bottom:10px">Стадия на HH: ${statusBadge(d.stage)}</div>`+(d.messages.length
+      ?d.messages.map(m=>`<div class="msg ${m.from==='employer'?'emp':'app'}">${esc(m.text||'(служебное сообщение)')}<span class="msg-meta">${m.from==='employer'?'Мы':'Кандидат'} · ${m.at?new Date(m.at).toLocaleString('ru-RU',{day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'}):'—'}</span></div>`).join('')
+      :'<div class="empty">Переписки пока нет.</div>');
+  }catch(e){chat.innerHTML=`<div class="issue error">${esc(e.message)}</div>`}
+}
+
+/* Разбор анкеты: вопрос — ответ кандидата — оценка ИИ. Данные склеиваются на сервере
+   из листа анкет и таблицы ответов формы. */
+async function loadAnketaRows(c,btn){
+  const box=document.getElementById('anketaRows');
+  if(box.dataset.open==='1'){box.innerHTML='';box.dataset.open='';btn.textContent='Посмотреть ответы';return}
+  btn.disabled=true;btn.textContent='Загружаем…';
+  try{
+    const q=`anketa-detail?spreadsheetId=${encodeURIComponent(c.spreadsheetId)}&row=${c.anketaRow}&fio=${encodeURIComponent(c.fio)}`;
+    const d=await api(q);
+    if(!d.rows||!d.rows.length){box.innerHTML='<div class="empty">Разбор по вопросам не найден.</div>'}
+    else{
+      const scoreCls=s=>s==null?'':s>=7?'b-ok':s>=5?'b-warn':'b-err';
+      box.innerHTML=`
+        ${d.note?`<div class="notice tiny" style="margin:14px 0 10px">${esc(d.note)}</div>`:''}
+        <div class="table-scroll" style="margin-top:14px"><table class="qa-table"><thead><tr>
+          <th style="width:26%">Вопрос</th><th style="width:34%">Ответ кандидата</th>
+          <th style="width:8%">Балл</th><th>Что увидел ИИ</th>
+        </tr></thead><tbody>
+        ${d.rows.map(r=>`<tr>
+          <td><b>${r.num}.</b> ${esc(r.question)}</td>
+          <td class="ans">${r.answer?esc(r.answer):'<span class="muted">нет ответа</span>'}</td>
+          <td>${r.score==null?'<span class="muted">—</span>':`<span class="badge ${scoreCls(r.score)}">${r.score}</span>`}</td>
+          <td class="tiny">${r.comment?esc(r.comment):'<span class="muted">—</span>'}</td>
+        </tr>`).join('')}
+        </tbody></table></div>`;
+    }
+    box.dataset.open='1';btn.textContent='Свернуть';
+  }catch(e){box.innerHTML=`<div class="issue error">${esc(e.message)}</div>`;btn.textContent='Посмотреть ответы'}
+  finally{btn.disabled=false}
+}
+
+async function saveDecision(c,kind){
+  const select=app.querySelector(`[data-dec="${kind}"]`),button=app.querySelector(`[data-save="${kind}"]`),message=app.querySelector(`[data-msg="${kind}"]`),value=select.value;
+  const canSend=['Подходит','Отказ','Не подходит'].includes(value);
+  if(!confirm(`Поставить «${value}» для ${c.fio}?${canSend?'\n\nЕсли вакансия в боевом режиме, кандидату уйдёт сообщение на HH.':''}`))return;
+  button.disabled=true;message.textContent='сохраняю…';
+  try{
+    const result=await api('decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vacancyId:c.vacancyId,kind,value,resumeId:c.resumeId,row:kind==='resume'?c.resumeRow:c.anketaRow,fio:c.fio})});
+    message.textContent=`✓ ${result.cell}`;message.style.color='var(--ok)';
+    if(kind==='resume')c.resume.status=value;else c.anketa.hrAction=value;
+    CANDS=[];setTimeout(()=>{CARD=null;render('candidates')},700);
+  }catch(e){message.textContent='✗ '+e.message;message.style.color='var(--err)'}finally{button.disabled=false}
+}
+
+const LOG_HELP={
+  google_quota:['Google временно ограничил чтение таблиц. Часть цикла могла быть пропущена.','Не запускайте несколько ручных прогонов подряд. Бот повторит обработку на следующем цикле.'],
+  invalid_vacancy:['Бот пытался действовать по вакансии, которая уже в архиве HH.','Отключите архивную вакансию в панели или восстановите её на HH.'],
+  hh_timeout:['HH временно не ответил или ответил с ошибкой шлюза.','Обычно проходит само. Если ошибка свежая и повторяется — проверьте аккаунт HH.'],
+  hh_403:['HH запретил конкретное действие.','Проверьте стадию кандидата, архивность вакансии и права аккаунта.'],
+  config_anketa:['Бот не смог прочитать ссылку на таблицу ответов формы.','Исправьте ссылку в «Доп. фильтры» → «Анкета».'],
+  code_error:['В коде произошла необработанная ошибка.','Откройте пример ошибки и передайте разработчику.'],
+  other:['Ошибка не попала в известную категорию.','Откройте пример и проверьте контекст.']
+};
+function systemView(){
+  return `<h1>Проверка системы</h1><p class="sub">Текущие проблемы конфигурации отдельно от старых записей в логах.</p>
+  <div class="toolbar"><button id="runCheck">Проверить заново</button><span class="count" id="checkTime"></span></div>
+  <div id="systemRoot"><div class="loading">Проверяю Google-таблицы, аккаунты HH и режимы… Это может занять до 30 секунд.</div></div>`;
+}
+async function loadSystem(force=false){
+  const root=document.getElementById('systemRoot');
+  try{
+    if(force){DIAG=null;LOGS=null}
+    await ensureDiagnostics(force);await ensureLogs();
+    document.getElementById('checkTime').textContent='проверено '+new Date(DIAG.ts).toLocaleString('ru-RU');
+    const current=DIAG.issues||[],important=current.filter(i=>i.severity!=='info');
+    root.innerHTML=`<div class="grid">
+      <div class="kpi ${DIAG.summary.errors?'err':'ok'}"><div class="n">${DIAG.summary.errors}</div><div class="label">Текущих ошибок</div></div>
+      <div class="kpi ${DIAG.summary.warnings?'warn':'ok'}"><div class="n">${DIAG.summary.warnings}</div><div class="label">Предупреждений</div></div>
+      <div class="kpi"><div class="n">${DIAG.summary.tablesOk}/${DIAG.vacancies.length}</div><div class="label">Таблиц без проблем</div></div>
+      <div class="kpi"><div class="n">${DIAG.summary.archived}</div><div class="label">Вакансий в архиве HH</div></div>
+    </div>
+    <div class="card"><h2>Что нужно исправить</h2>${important.length?important.map(renderIssue).join(''):'<div class="empty">Текущих проблем не найдено.</div>'}</div>
+    <div class="card"><h2>Аккаунты HH</h2><div class="table-scroll"><table><thead><tr><th>Аккаунт</th><th>Работодатель</th><th>Статус</th><th>Токен до</th><th>Последний успешный запрос</th></tr></thead><tbody>
+      ${DIAG.accounts.map(a=>`<tr><td class="fio">${esc(a.email)}</td><td>${esc(a.employerName||'—')}</td><td>${a.status==='active'&&!a.lastError?badge('работает','ok'):badge(a.lastError||a.status,'err')}</td><td class="tiny">${a.expiresAt?new Date(a.expiresAt).toLocaleString('ru-RU'):'—'}</td><td class="tiny">${a.lastSuccessAt?new Date(a.lastSuccessAt).toLocaleString('ru-RU'):'—'}</td></tr>`).join('')}
+    </tbody></table></div></div>
+    <div class="card"><h2>История технических ошибок</h2><p class="tiny">Это записи из логов. Старые ошибки могли быть уже исправлены; свежие помечены отдельно.</p>
+      ${renderLogGroups(LOGS.groups||[])}</div>`;
+  }catch(e){root.innerHTML=`<div class="issue error"><div class="issue-title">Проверка не завершилась</div>${esc(e.message)}</div>`}
+}
+function renderIssue(issue){
+  return `<div class="issue ${issue.severity}"><div style="display:flex;gap:8px;align-items:center">${badge(issue.severity==='error'?'ошибка':issue.severity==='warn'?'внимание':'инфо',issue.severity==='error'?'err':issue.severity==='warn'?'warn':'blue')}<div class="issue-title">${esc(issue.title)}</div></div>
+    <div class="tiny">${esc(issue.vacancy)}</div><div>${esc(issue.message)}</div><div class="issue-action"><b>Что сделать:</b> ${esc(issue.action)} ${issue.link?`<a href="${esc(issue.link)}" target="_blank">открыть ↗</a>`:''}</div></div>`;
+}
+function renderLogGroups(groups){
+  if(!groups.length)return '<div class="empty">Записей нет.</div>';
+  const recent=groups.filter(g=>g.recent),old=groups.filter(g=>!g.recent);
+  const rows=list=>`<div class="table-scroll"><table><thead><tr><th>Ошибка</th><th>Вакансия</th><th>Сколько</th><th>Что делать</th></tr></thead><tbody>${list.map(g=>{const help=LOG_HELP[g.type]||LOG_HELP.other;return `<tr><td>${badge(g.recent?'свежая':'история',g.recent?'warn':'mut')} <b>${esc(g.title)}</b><details><summary class="tiny">пример из лога</summary><div class="prose">${esc(g.sample)}</div></details></td><td class="tiny">${esc(g.vacancy||'—')}</td><td class="score">${g.count}</td><td><div>${esc(help[0])}</div><div class="tiny">${esc(help[1])}</div></td></tr>`}).join('')}</tbody></table></div>`;
+  return (recent.length?`<h3>Свежие</h3>${rows(recent)}`:'<div class="empty">Свежих ошибок в конце логов нет.</div>')+(old.length?`<details><summary>Показать историю (${old.length} групп)</summary>${rows(old)}</details>`:'');
+}
+
+function vacanciesView(){
+  return `<div id="vacRoot"><div class="loading">Загрузка вакансий…</div></div>`;
+}
+async function loadVacancies(force){
+  if(WZ)return renderWizard();
+  const root=document.getElementById('vacRoot');
+  try{
+    if(force||!REG)REG=await api('vacancies');
+    if(force||!DIAG)DIAG=await api('diagnostics');
+  }catch(e){root.innerHTML=`<div class="issue error">${esc(e.message)}</div>`;return}
+  const map=new Map((DIAG?.vacancies||[]).map(v=>[v.row,v]));
+  const cards=(REG.vacancies||[]).map(v=>{
+    const d=map.get(v.row)||{};
+    const on=v.status==='active';
+    return `<div class="fcard">
+      <div class="fcard-main">
+        <div class="fcard-title">${esc(v.name)}</div>
+        <div class="fcard-meta">
+          ${on?'<span class="pill pill-ok">Бот работает</span>':v.status==='disabled'?'<span class="pill pill-draft">Отключена</span>':'<span class="pill pill-draft">Черновик</span>'}
+          ${on?(v.mode==='live'?'<span class="pill pill-warn">боевой: пишет кандидатам</span>':'<span class="pill pill-draft">тест: только анализ</span>'):''}
+          ${d.hhStatus==='archived'?'<span class="pill pill-warn">в архиве на HH</span>':''}
+          <span>ID ${esc(v.vacancyId||'—')}</span>
+          <span>· ${esc(v.account||'аккаунт не указан')}</span>
+          <span>· ${esc(v.responsible||'без ответственного')}</span>
+        </div>
+        <div class="fcard-link">
+          ${v.hhUrl?`<a class="mini" href="${esc(v.hhUrl)}" target="_blank">вакансия на hh.ru ↗</a>`:''}
+          ${v.templatesUrl?`<a class="mini" href="${esc(v.templatesUrl)}" target="_blank">таблица ↗</a>`:''}
+        </div>
+      </div>
+      <div class="fcard-actions">
+        ${on?(v.mode==='live'
+            ?`<button class="ghost" data-mode="${v.row}" data-live="0">Перевести в тест</button>`
+            :`<button data-mode="${v.row}" data-live="1">Включить отправку</button>`):''}
+        ${v.status==='active'?`<button class="ghost" data-toggle="${v.row}" data-active="0">Отключить бота</button>`
+          :v.status==='disabled'?`<button data-toggle="${v.row}" data-active="1">Включить бота</button>`:''}
+      </div></div>`;
+  }).join('');
+  root.innerHTML=`<h1>Вакансии</h1>
+    <p class="sub">Какие вакансии ведёт бот и что с ними происходит.</p>
+    <div class="toolbar"><button id="newVac">Создать вакансию</button>
+      <button class="ghost" id="refreshVac">Обновить</button></div>
+    ${cards||'<div class="fempty"><div class="fempty-icon">📋</div><h2>Вакансий пока нет</h2><p class="muted">Нажмите «Создать вакансию» — проведу по шагам.</p></div>'}`;
+  document.getElementById('newVac').onclick=wizardStart;
+  document.getElementById('refreshVac').onclick=()=>{REG=null;DIAG=null;loadVacancies(true)};
+  root.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>toggleVacancy(+b.dataset.toggle,b.dataset.active==='1',b));
+  root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>switchMode(+b.dataset.mode,b.dataset.live==='1',b));
+}
+
+/* Режим вакансии: боевой (бот пишет кандидатам) или тест (только анализ).
+   Хранится в колонке «Режим» реестра — бот читает оттуда же. */
+async function switchMode(row,live,button){
+  const text=live
+    ?'Включить отправку?\n\nБот начнёт писать кандидатам на hh.ru по этой вакансии: письма по решениям и ответы на вопросы.'
+    :'Перевести в тест?\n\nБот продолжит анализировать резюме и вести таблицу, но кандидатам писать не будет.';
+  if(!confirm(text))return;
+  button.disabled=true;
+  try{
+    await api('vacancy/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({row,mode:live?'live':'test'})});
+    REG=null;DIAG=null;loadVacancies(true);
+  }catch(e){alert(e.message);button.disabled=false}
+}
+async function toggleVacancy(row,active,button){
+  if(!confirm(`${active?'Включить':'Отключить'} вакансию?${active?'':'\n\nБот перестанет обрабатывать её отклики, анкеты и чат.'}`))return;
+  button.disabled=true;
+  try{await api('vacancy/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({row,active})});REG=null;DIAG=null;loadVacancies(true)}
+  catch(e){alert(e.message);button.disabled=false}
+}
+/* ================= МАСТЕР СОЗДАНИЯ ВАКАНСИИ ================= */
+let WZ=null, WZSTEP=1;
+const WZ_STEPS=['Таблица','О вакансии','Вопросы кандидатов','Письма','Отбор','Анкета','Проверка'];
+
+function wizardStart(){
+  WZ={
+    templatesUrl:'', sheetInfo:null,
+    name:'', hhUrl:'', responsible:'', account:'',
+    qa:[{question:'',answer:''}],
+    templates:null,
+    filters:[''],
+    anketaMode:'later', anketaUrl:'', anketaTitle:'', anketaQuestions:[]
+  };
+  WZSTEP=1;
+  renderWizard();
+}
+
+function wzStepper(){
+  return `<div class="stepper">${WZ_STEPS.map((s,i)=>{
+    const n=i+1, state=n<WZSTEP?'done':n===WZSTEP?'now':'';
+    return `<div class="stp ${state}"><span class="stp-n">${n<WZSTEP?'✓':n}</span><span class="stp-t">${s}</span></div>`;
+  }).join('')}</div>`;
+}
+
+function wzNav(nextLabel='Дальше →',nextId='wzNext',extra=''){
+  return `<div class="savebar">
+    <div id="wzMsg" class="tiny"></div>
+    <div class="savebar-btns">
+      ${WZSTEP>1?'<button class="ghost" id="wzBack">← Назад</button>':''}
+      ${extra}<button id="${nextId}">${nextLabel}</button>
+    </div></div>`;
+}
+
+function renderWizard(){
+  const root=document.getElementById('vacRoot')||app;
+  const steps={1:wzStep1,2:wzStep2,3:wzStep3,4:wzStep4,5:wzStep5,6:wzStep6,7:wzStep7};
+  root.innerHTML=`<button class="ghost back" id="wzExit">← К списку вакансий</button>
+    <h1>Новая вакансия</h1>
+    <p class="sub">Шаг ${WZSTEP} из 7 — ${WZ_STEPS[WZSTEP-1]}</p>
+    ${wzStepper()}${steps[WZSTEP]()}`;
+  document.getElementById('wzExit').onclick=()=>{if(confirm('Выйти из мастера? Введённое не сохранится.')){WZ=null;goSettings('vacancies')}};
+  const back=document.getElementById('wzBack');
+  if(back)back.onclick=()=>{wzPull();WZSTEP--;renderWizard()};
+  const next=document.getElementById('wzNext');
+  if(next)next.onclick=wzNext;
+  if(WZSTEP===1)document.getElementById('wzCheck').onclick=wzCheckSheet;
+  if(WZSTEP===3){document.getElementById('addQa').onclick=()=>{wzPull();WZ.qa.push({question:'',answer:''});renderWizard()};
+    document.querySelectorAll('[data-qadel]').forEach(b=>b.onclick=()=>{wzPull();WZ.qa.splice(+b.dataset.qadel,1);if(!WZ.qa.length)WZ.qa=[{question:'',answer:''}];renderWizard()})}
+  if(WZSTEP===5){document.getElementById('addFilter').onclick=()=>{wzPull();WZ.filters.push('');renderWizard()};
+    document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{wzPull();WZ.filters.splice(+b.dataset.fdel,1);if(!WZ.filters.length)WZ.filters=[''];renderWizard()})}
+  if(WZSTEP===6){
+    document.querySelectorAll('[name=anketaMode]').forEach(r=>r.onchange=()=>{wzPull();renderWizard()});
+    const add=document.getElementById('addAq');
+    if(add)add.onclick=()=>{wzPull();WZ.anketaQuestions.push({id:'q'+Math.random().toString(36).slice(2,7),type:'long',title:'',required:true});renderWizard()};
+    document.querySelectorAll('[data-aqdel]').forEach(b=>b.onclick=()=>{wzPull();WZ.anketaQuestions.splice(+b.dataset.aqdel,1);renderWizard()});
+  }
+  if(WZSTEP===7)document.getElementById('wzBuild').onclick=wzBuild;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* --- ШАГ 1: таблица --- */
+function wzStep1(){
+  const i=WZ.sheetInfo;
+  return `<div class="block">
+    <div class="block-head"><span class="step">1</span><div><b>Google-таблица вакансии</b>
+      <div class="muted tiny">Здесь бот будет вести анализ резюме и анкет</div></div></div>
+    <div class="hintbox">
+      <b>Что сделать:</b>
+      <ol><li>Создайте пустую Google-таблицу (или скопируйте существующую вакансию).</li>
+      <li>Нажмите «Настройки доступа» и добавьте <code>openclaw@aerobic-cosmos-488918-k2.iam.gserviceaccount.com</code> как <b>Редактора</b>.</li>
+      <li>Вставьте ссылку сюда — нужные листы я создам сам.</li></ol>
+    </div>
+    <div class="field"><label>Ссылка на таблицу</label>
+      <input id="wzUrl" value="${esc(WZ.templatesUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+    <button class="ghost" id="wzCheck">Проверить доступ</button>
+    ${i?(i.ok?`<div class="okbox"><b>✓ Доступ есть:</b> ${esc(i.title)}
+        <div class="tiny" style="margin-top:8px">${i.sheets.map(s=>`${s.exists?(s.filled?'✓':'○'):'+'} ${esc(s.name)}${s.filled?` (${s.rows} строк)`:s.exists?' — пустой':' — создам'}`).join('<br>')}</div></div>`
+      :`<div class="errbox"><b>${esc(i.error)}</b>${i.hint?`<div class="tiny" style="margin-top:6px">${esc(i.hint)}</div>`:''}</div>`):''}
+    </div>${wzNav()}`;
+}
+
+async function wzCheckSheet(){
+  wzPull();
+  const btn=document.getElementById('wzCheck');
+  btn.disabled=true;btn.textContent='Проверяем…';
+  try{WZ.sheetInfo=await api('wizard/check-sheet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:WZ.templatesUrl})})}
+  catch(e){WZ.sheetInfo={ok:false,error:e.message}}
+  renderWizard();
+}
+
+/* --- ШАГ 2: о вакансии --- */
+function wzStep2(){
+  const accs=(REG?.accounts||[]).map(a=>`<option ${WZ.account===a.email?'selected':''}>${esc(a.email)}</option>`).join('');
+  return `<div class="block">
+    <div class="block-head"><span class="step">2</span><div><b>Основное</b>
+      <div class="muted tiny">Как вакансия называется и кто с ней работает</div></div></div>
+    <div class="field"><label>Название вакансии</label>
+      <input id="wzName" value="${esc(WZ.name)}" placeholder="Например: Инженер-конструктор"></div>
+    <div class="field"><label>Ссылка на вакансию на hh.ru</label>
+      <input id="wzHh" value="${esc(WZ.hhUrl)}" placeholder="https://hh.ru/vacancy/123456789">
+      <div class="tiny muted" style="margin-top:5px">Скопируйте из адресной строки страницы вакансии</div></div>
+    <div class="field"><label>С какого аккаунта HH ведём</label>
+      <select id="wzAcc"><option value="">выберите аккаунт</option>${accs}</select></div>
+    <div class="field"><label>Ответственный</label>
+      <input id="wzResp" value="${esc(WZ.responsible)}" placeholder="@username в Telegram">
+      <div class="tiny muted" style="margin-top:5px">Ему бот будет присылать уведомления по этой вакансии</div></div>
+    </div>${wzNav()}`;
+}
+
+/* --- ШАГ 3: вопрос-ответ --- */
+function wzStep3(){
+  return `<div class="block">
+    <div class="block-head"><span class="step">3</span><div><b>Частые вопросы кандидатов</b>
+      <div class="muted tiny">Бот отвечает на них в чате hh.ru сам. Если ответа нет — передаст вопрос вам</div></div></div>
+    ${WZ.qa.map((x,i)=>`<div class="qitem">
+      <div class="qitem-head"><span class="qnum">${i+1}</span>
+        <input class="qtitle" data-qaq="${i}" value="${esc(x.question)}" placeholder="Вопрос кандидата: например, «Какой график работы?»">
+        <span class="qmove"><button class="mini del" data-qadel="${i}">✕</button></span></div>
+      <div class="field"><label>Что отвечаем</label>
+        <textarea data-qaa="${i}" rows="2" placeholder="Полный ответ, который увидит кандидат">${esc(x.answer)}</textarea></div>
+    </div>`).join('')}
+    <button class="ghost wide" id="addQa">+ Добавить вопрос</button>
+    <div class="tiny muted" style="margin-top:10px">Можно пропустить и заполнить позже прямо в таблице.</div>
+    </div>${wzNav()}`;
+}
+
+/* --- ШАГ 4: письма --- */
+function wzStep4(){
+  const t=WZ.templates||[];
+  const label={'Успешно|Резюме':'Кандидат подошёл по резюме — приглашаем заполнить анкету',
+    'Отказ|Резюме':'Кандидат не подошёл по резюме — вежливый отказ',
+    'Успешно|Тестовое задание':'Анкета понравилась — зовём на собеседование',
+    'Отказ|Тестовое задание':'Анкета не подошла — отказ'};
+  return `<div class="block">
+    <div class="block-head"><span class="step">4</span><div><b>Письма кандидатам</b>
+      <div class="muted tiny">Их отправляет бот. Тексты уже готовы — поправьте под себя</div></div></div>
+    <div class="hintbox tiny"><b>[Name]</b> — подставится имя кандидата, <b>[Vacancy]</b> — название вакансии,
+      <b>[АНКЕТА]</b> — ссылка на анкету (подставлю автоматически на шаге 6).</div>
+    ${t.map((x,i)=>`<div class="qitem">
+      <div class="qitem-head"><span class="qnum">${i+1}</span>
+        <b style="flex:1">${esc(label[x.condition+'|'+x.type]||x.condition+' / '+x.type)}</b></div>
+      <div class="field"><textarea data-tpl="${i}" rows="6">${esc(x.text)}</textarea></div>
+    </div>`).join('')}
+    </div>${wzNav()}`;
+}
+
+/* --- ШАГ 5: фильтры --- */
+function wzStep5(){
+  return `<div class="block">
+    <div class="block-head"><span class="step">5</span><div><b>Требования к кандидату</b>
+      <div class="muted tiny">По ним ИИ решает, подходит человек или нет</div></div></div>
+    <div class="hintbox tiny">Пишите простыми фразами, по одному требованию в строке.
+      Например: «Возраст от 25 до 50, регион Воронеж» или «Обязателен опыт работы с металлом».</div>
+    ${WZ.filters.map((f,i)=>`<div class="row-del">
+      <input data-filter="${i}" value="${esc(f)}" placeholder="Требование ${i+1}">
+      <button class="mini del" data-fdel="${i}">✕</button></div>`).join('')}
+    <button class="ghost wide" id="addFilter" style="margin-top:8px">+ Добавить требование</button>
+    </div>${wzNav()}`;
+}
+
+/* --- ШАГ 6: анкета --- */
+function wzStep6(){
+  const m=WZ.anketaMode;
+  return `<div class="block">
+    <div class="block-head"><span class="step">6</span><div><b>Анкета для кандидата</b>
+      <div class="muted tiny">Её присылают тем, кто прошёл по резюме</div></div></div>
+    <label class="opt-row"><input type="radio" name="anketaMode" value="create" ${m==='create'?'checked':''}>
+      <span><b>Создать здесь</b><br><span class="tiny muted">Составим вопросы прямо сейчас, ссылка появится автоматически</span></span></label>
+    <label class="opt-row"><input type="radio" name="anketaMode" value="link" ${m==='link'?'checked':''}>
+      <span><b>У меня уже есть Google-форма</b><br><span class="tiny muted">Вставлю ссылку на существующую</span></span></label>
+    <label class="opt-row"><input type="radio" name="anketaMode" value="later" ${m==='later'?'checked':''}>
+      <span><b>Позже</b><br><span class="tiny muted">Вакансию заведём сейчас, анкету добавим потом</span></span></label>
+    ${m==='later'?`<div class="hintbox tiny" style="margin-top:12px"><b>Учтите:</b> колонки под ответы на вопросы анкеты
+      появятся только вместе с анкетой. Пока её нет, разбор анкет по этой вакансии работать не будет.</div>`:''}
+    ${m==='create'&&WZ.anketaQuestions.filter(q=>q.title.trim()).length?`<div class="okbox tiny">
+      В таблице создам колонки «Ответ на 3 вопрос» … «Ответ на ${WZ.anketaQuestions.filter(q=>q.title.trim()).length+2} вопрос» —
+      по одной на каждый вопрос анкеты.</div>`:''}
+
+    ${m==='link'?`<div class="field" style="margin-top:14px"><label>Ссылка на таблицу ответов формы</label>
+      <input id="wzAnketaUrl" value="${esc(WZ.anketaUrl)}" placeholder="https://docs.google.com/spreadsheets/d/..."></div>`:''}
+
+    ${m==='create'?`<div style="margin-top:16px">
+      <div class="field"><label>Название анкеты</label>
+        <input id="wzAnketaTitle" value="${esc(WZ.anketaTitle||('Анкета — '+WZ.name))}"></div>
+      ${WZ.anketaQuestions.map((q,i)=>`<div class="qitem">
+        <div class="qitem-head"><span class="qnum">${i+1}</span>
+          <input class="qtitle" data-aq="${i}" value="${esc(q.title)}" placeholder="Вопрос для кандидата">
+          <span class="qmove"><button class="mini del" data-aqdel="${i}">✕</button></span></div>
+        <div class="row2">
+          <div class="field"><label>Как отвечать</label>
+            <select data-aqt="${i}">${Object.entries(QTYPES).map(([k,v])=>`<option value="${k}" ${q.type===k?'selected':''}>${v.label}</option>`).join('')}</select></div>
+          <div class="field"><label>Можно пропустить?</label>
+            <select data-aqr="${i}"><option value="0" ${!q.required?'selected':''}>да</option><option value="1" ${q.required?'selected':''}>нет</option></select></div>
+        </div></div>`).join('')}
+      <button class="ghost wide" id="addAq">+ Добавить вопрос анкеты</button>
+    </div>`:''}
+    </div>${wzNav()}`;
+}
+
+/* --- ШАГ 7: проверка --- */
+function wzStep7(){
+  const row=(k,v)=>`<div class="kv"><b>${k}</b><span>${v}</span></div>`;
+  const anketa=WZ.anketaMode==='create'?`создам новую (${WZ.anketaQuestions.filter(q=>q.title.trim()).length} вопросов)`
+    :WZ.anketaMode==='link'?esc(WZ.anketaUrl||'—'):'добавим позже';
+  return `<div class="block">
+    <div class="block-head"><span class="step">7</span><div><b>Всё готово — проверьте</b>
+      <div class="muted tiny">После создания бот начнёт обрабатывать отклики по этой вакансии</div></div></div>
+    ${row('Название',esc(WZ.name)||'<span class="muted">не указано</span>')}
+    ${row('Вакансия на HH',WZ.hhUrl?`<a href="${esc(WZ.hhUrl)}" target="_blank">открыть ↗</a>`:'<span class="muted">не указана</span>')}
+    ${row('Аккаунт HH',esc(WZ.account)||'<span class="muted">не выбран</span>')}
+    ${row('Ответственный',esc(WZ.responsible)||'<span class="muted">не указан</span>')}
+    ${row('Таблица',WZ.sheetInfo?.title?esc(WZ.sheetInfo.title):'<span class="muted">не проверена</span>')}
+    ${row('Вопрос-ответ',WZ.qa.filter(x=>x.question.trim()&&x.answer.trim()).length+' шт.')}
+    ${row('Письма',(WZ.templates||[]).filter(t=>t.text.trim()).length+' шт.')}
+    ${row('Требования',WZ.filters.filter(f=>f.trim()).length+' шт.')}
+    ${row('Анкета',anketa)}
+    </div>
+    <div class="savebar"><div id="wzMsg" class="tiny"></div>
+    <div class="savebar-btns"><button class="ghost" id="wzBack">← Назад</button>
+    <button id="wzBuild">Создать вакансию</button></div></div>`;
+}
+
+/* --- сбор введённого --- */
+function wzPull(){
+  const g=id=>document.getElementById(id);
+  if(g('wzUrl'))WZ.templatesUrl=g('wzUrl').value.trim();
+  if(g('wzName'))WZ.name=g('wzName').value.trim();
+  if(g('wzHh'))WZ.hhUrl=g('wzHh').value.trim();
+  if(g('wzAcc'))WZ.account=g('wzAcc').value;
+  if(g('wzResp'))WZ.responsible=g('wzResp').value.trim();
+  if(g('wzAnketaUrl'))WZ.anketaUrl=g('wzAnketaUrl').value.trim();
+  if(g('wzAnketaTitle'))WZ.anketaTitle=g('wzAnketaTitle').value.trim();
+  document.querySelectorAll('[data-qaq]').forEach(el=>{WZ.qa[+el.dataset.qaq].question=el.value});
+  document.querySelectorAll('[data-qaa]').forEach(el=>{WZ.qa[+el.dataset.qaa].answer=el.value});
+  document.querySelectorAll('[data-tpl]').forEach(el=>{WZ.templates[+el.dataset.tpl].text=el.value});
+  document.querySelectorAll('[data-filter]').forEach(el=>{WZ.filters[+el.dataset.filter]=el.value});
+  const mode=document.querySelector('[name=anketaMode]:checked');
+  if(mode)WZ.anketaMode=mode.value;
+  document.querySelectorAll('[data-aq]').forEach(el=>{WZ.anketaQuestions[+el.dataset.aq].title=el.value});
+  document.querySelectorAll('[data-aqt]').forEach(el=>{WZ.anketaQuestions[+el.dataset.aqt].type=el.value});
+  document.querySelectorAll('[data-aqr]').forEach(el=>{WZ.anketaQuestions[+el.dataset.aqr].required=el.value==='1'});
+}
+
+async function wzNext(){
+  wzPull();
+  const say=t=>{const m=document.getElementById('wzMsg');m.className='tiny bad';m.textContent=t};
+  if(WZSTEP===1){
+    if(!WZ.sheetInfo?.ok)return say('Сначала проверьте доступ к таблице');
+  }
+  if(WZSTEP===2){
+    if(!WZ.name)return say('Впишите название вакансии');
+    if(!/\/vacancy\/\d+/.test(WZ.hhUrl))return say('Ссылка на HH должна быть вида hh.ru/vacancy/123456');
+    if(!WZ.account)return say('Выберите аккаунт HH');
+    if(!WZ.responsible)return say('Укажите ответственного');
+    if(!WZ.templates){
+      try{WZ.templates=(await api('wizard/defaults?company='+encodeURIComponent('компания'))).templates}
+      catch(e){return say(e.message)}
+    }
+  }
+  if(WZSTEP===6){
+    if(WZ.anketaMode==='link'&&!/spreadsheets\/d\//.test(WZ.anketaUrl))return say('Вставьте ссылку на таблицу ответов формы');
+    if(WZ.anketaMode==='create'){
+      const filled=WZ.anketaQuestions.filter(q=>q.title.trim());
+      if(!filled.length)return say('Добавьте хотя бы один вопрос анкеты');
+    }
+  }
+  WZSTEP++;renderWizard();
+}
+
+async function wzBuild(){
+  wzPull();
+  const btn=document.getElementById('wzBuild'),msg=document.getElementById('wzMsg');
+  if(!confirm(`Создать вакансию «${WZ.name}»?\n\nПосле создания бот начнёт обрабатывать её отклики.`))return;
+  btn.disabled=true;msg.className='tiny';msg.textContent='Создаём…';
+  try{
+    const payload={...WZ,anketaQuestions:WZ.anketaQuestions.filter(q=>q.title.trim())};
+    const r=await api('wizard/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    WZ=null;REG=null;DIAG=null;FORMS=null;
+    app.innerHTML=`<div class="okfinal">
+      <div class="okfinal-icon">🎉</div>
+      <h1>Вакансия создана</h1>
+      <p class="sub">ID на HH: ${esc(r.vacancyId)}</p>
+      <div class="block" style="text-align:left;max-width:560px;margin:0 auto 18px">
+        ${r.log.map(l=>`<div class="kv"><b>✓</b><span>${esc(l)}</span></div>`).join('')}
+      </div>
+      <div class="links" style="align-items:center">
+        <a class="mini" href="${esc(r.spreadsheetUrl)}" target="_blank">открыть таблицу ↗</a>
+        ${r.anketaUrl?`<a class="mini" href="${esc(r.anketaUrl)}" target="_blank">открыть анкету ↗</a>`:''}
+      </div>
+      <div style="margin-top:22px"><button id="okDone">К списку вакансий</button></div></div>`;
+    document.getElementById('okDone').onclick=()=>goSettings('vacancies');
+  }catch(e){msg.className='tiny bad';msg.textContent='✗ '+e.message;btn.disabled=false}
+}
+
+/* ================= АНКЕТЫ ================= */
+/* Три простых экрана без всплывающих окон: список → редактор → ответы.
+   Переключаются прямо на странице, состояние в SCREEN. */
+let FORMS=null, EDIT=null, SCREEN='list', VIEWING=null;
+const QTYPES={
+  short:{label:'Короткий ответ',hint:'одна строка: город, стаж, должность'},
+  long:{label:'Развёрнутый ответ',hint:'несколько предложений'},
+  number:{label:'Число',hint:'только цифры'},
+  one:{label:'Выбор одного варианта',hint:'кандидат выберет один'},
+  many:{label:'Выбор нескольких',hint:'можно отметить несколько'},
+  scale:{label:'Оценка по шкале',hint:'например, от 1 до 10'},
+};
+const formLink=pid=>location.origin+'/anketa/'+pid;
+const plural=(n,a,b,c)=>{const d=n%100,e=n%10;return n+' '+(d>4&&d<21?c:e===1?a:e>1&&e<5?b:c)};
+
+function formsView(){return `<div id="formsRoot"><div class="loading">Загружаем…</div></div>`}
+
+function goto(screen,arg){
+  SCREEN=screen;
+  if(screen==='list')renderFormsList();
+  if(screen==='edit')renderFormEditor();
+  if(screen==='responses')renderResponses(arg);
+}
+
+/* ---------- ЭКРАН 1: список анкет ---------- */
+async function loadForms(force){
+  if(force||!FORMS){
+    try{FORMS=(await api('forms')).forms}
+    catch(e){document.getElementById('formsRoot').innerHTML=`<div class="issue error">${esc(e.message)}</div>`;return}
+  }
+  if(!REG){try{REG=await api('vacancies')}catch{}}
+  goto('list');
+}
+
+function renderFormsList(){
+  const root=document.getElementById('formsRoot');
+  const cards=FORMS.map(f=>{
+    const live=f.status==='published';
+    return `<div class="fcard">
+      <div class="fcard-main">
+        <div class="fcard-title">${esc(f.title)}</div>
+        <div class="fcard-meta">
+          ${live?'<span class="pill pill-ok">Работает</span>':'<span class="pill pill-draft">Черновик</span>'}
+          <span>${plural(f.questionsCount,'вопрос','вопроса','вопросов')}</span>
+          <span>${f.responsesCount?`<b>${plural(f.responsesCount,'ответ','ответа','ответов')}</b>`:'ответов пока нет'}</span>
+          ${f.vacancyName?`<span>· ${esc(f.vacancyName)}</span>`:''}
+        </div>
+        ${live?`<div class="fcard-link"><code>${esc(formLink(f.publicId))}</code>
+          <button class="mini" data-copy="${esc(f.publicId)}">копировать</button>
+          <a class="mini" href="${esc(formLink(f.publicId))}" target="_blank">открыть</a></div>`:''}
+      </div>
+      <div class="fcard-actions">
+        ${f.responsesCount?`<button data-open="${esc(f.id)}">Смотреть ответы</button>`:''}
+        <button class="ghost" data-edit="${esc(f.id)}">Изменить вопросы</button>
+        <button class="ghost" data-pub="${esc(f.id)}" data-to="${live?'draft':'published'}">${live?'Остановить приём':'Включить приём'}</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  root.innerHTML=`
+    <h1>Анкеты</h1>
+    <p class="sub">Составьте вопросы — получите ссылку, которую можно отправить кандидату.</p>
+    <div class="toolbar"><button id="newForm">Создать анкету</button>
+      <button class="ghost" id="refreshForms">Обновить</button></div>
+    ${FORMS.length?cards:`<div class="fempty">
+      <div class="fempty-icon">📝</div>
+      <h2>Пока ни одной анкеты</h2>
+      <p class="muted">Нажмите «Создать анкету» — это займёт пару минут.</p></div>`}`;
+
+  document.getElementById('newForm').onclick=()=>{EDIT=blankForm();goto('edit')};
+  document.getElementById('refreshForms').onclick=()=>{FORMS=null;loadForms(true)};
+  root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{EDIT=prepForm(await api('forms/'+b.dataset.edit).then(r=>r.form));goto('edit')}
+    catch(e){alert(e.message);b.disabled=false}
+  });
+  root.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>goto('responses',b.dataset.open));
+  root.querySelectorAll('[data-pub]').forEach(b=>b.onclick=()=>toggleFormStatus(b.dataset.pub,b.dataset.to,b));
+  root.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{
+    navigator.clipboard.writeText(formLink(b.dataset.copy));
+    const t=b.textContent;b.textContent='скопировано ✓';setTimeout(()=>b.textContent=t,1500);
+  });
+}
+
+async function toggleFormStatus(id,to,btn){
+  if(to==='draft'&&!confirm('Остановить приём ответов?\n\nСсылка перестанет открываться у кандидатов. Включить обратно можно в любой момент.'))return;
+  btn.disabled=true;
+  try{await api(`forms/${id}/status`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:to})});FORMS=null;loadForms(true)}
+  catch(e){alert(e.message);btn.disabled=false}
+}
+
+/* ---------- ЭКРАН 2: редактор ---------- */
+function blankQuestion(){return{id:'q'+Math.random().toString(36).slice(2,8),type:'short',title:'',hint:'',required:true,options:['',''],min:1,max:10}}
+function blankForm(){return{title:'',description:'',vacancyId:'',vacancyName:'',questions:[blankQuestion()],status:'draft'}}
+function prepForm(f){
+  const out=structuredClone(f);
+  out.questions=(Array.isArray(out.questions)&&out.questions.length?out.questions:[blankQuestion()]).map(q=>({...blankQuestion(),...q}));
+  return out;
+}
+
+function renderFormEditor(){
+  const root=document.getElementById('formsRoot');
+  const vacs=(REG?.vacancies||[]).map(v=>`<option value="${esc(v.vacancyId||'')}" ${EDIT.vacancyId===v.vacancyId?'selected':''}>${esc(v.name)}</option>`).join('');
+  root.innerHTML=`
+    <button class="ghost back" id="back">← К списку анкет</button>
+    <h1>${EDIT.id?'Изменить анкету':'Новая анкета'}</h1>
+    <p class="sub">${EDIT.id?'Правки применятся сразу, ссылка останется прежней.':'Заполните название и вопросы. Опубликовать можно сразу или позже.'}</p>
+
+    <div class="block">
+      <div class="block-head"><span class="step">1</span><div><b>О чём анкета</b>
+        <div class="muted tiny">Название видит кандидат в шапке анкеты</div></div></div>
+      <div class="field"><label>Название</label>
+        <input id="fTitle" value="${esc(EDIT.title)}" placeholder="Например: Анкета для механика"></div>
+      <div class="field"><label>Короткое пояснение <span class="muted">(необязательно)</span></label>
+        <input id="fDesc" value="${esc(EDIT.description||'')}" placeholder="Ответьте на несколько вопросов — это займёт 5 минут"></div>
+      <div class="field"><label>Вакансия <span class="muted">(необязательно)</span></label>
+        <select id="fVacSel"><option value="">не привязывать</option>${vacs}</select></div>
+    </div>
+
+    <div class="block">
+      <div class="block-head"><span class="step">2</span><div><b>Вопросы</b>
+        <div class="muted tiny" id="qCount"></div></div></div>
+      <div id="qList"></div>
+      <button class="ghost wide" id="addQ">+ Добавить вопрос</button>
+    </div>
+
+    <div class="savebar">
+      <div id="edMsg" class="tiny"></div>
+      <div class="savebar-btns">
+        <button class="ghost" id="saveDraft">Сохранить черновик</button>
+        <button id="savePub">${EDIT.status==='published'?'Сохранить':'Опубликовать и получить ссылку'}</button>
+      </div>
+    </div>`;
+
+  document.getElementById('back').onclick=()=>{if(confirm('Выйти? Несохранённые правки пропадут.'))goto('list')};
+  document.getElementById('addQ').onclick=()=>{pullEditor();EDIT.questions.push(blankQuestion());renderQuestions();
+    document.querySelector('#qList .qitem:last-child input')?.focus()};
+  document.getElementById('saveDraft').onclick=()=>saveForm('draft');
+  document.getElementById('savePub').onclick=()=>saveForm('published');
+  renderQuestions();
+}
+
+function renderQuestions(){
+  const list=document.getElementById('qList');
+  list.innerHTML=EDIT.questions.map((q,i)=>{
+    const extra=(q.type==='one'||q.type==='many')
+      ? `<div class="field"><label>Варианты ответа — каждый с новой строки</label>
+           <textarea data-opts="${i}" rows="3" placeholder="Да&#10;Нет&#10;Обсуждаемо">${esc((q.options||[]).filter(Boolean).join('\n'))}</textarea></div>`
+      : q.type==='scale'
+      ? `<div class="row2"><div class="field"><label>От</label><input type="number" data-min="${i}" value="${q.min??1}"></div>
+         <div class="field"><label>До</label><input type="number" data-max="${i}" value="${q.max??10}"></div></div>`
+      : '';
+    return `<div class="qitem">
+      <div class="qitem-head"><span class="qnum">${i+1}</span>
+        <input class="qtitle" data-title="${i}" value="${esc(q.title)}" placeholder="Текст вопроса">
+        <span class="qmove">
+          <button class="mini" data-up="${i}" ${i===0?'disabled':''} title="выше">↑</button>
+          <button class="mini" data-down="${i}" ${i===EDIT.questions.length-1?'disabled':''} title="ниже">↓</button>
+          <button class="mini del" data-del="${i}" title="удалить">✕</button></span></div>
+      <div class="row2">
+        <div class="field"><label>Как отвечать</label>
+          <select data-type="${i}">${Object.entries(QTYPES).map(([k,v])=>`<option value="${k}" ${q.type===k?'selected':''}>${v.label}</option>`).join('')}</select>
+          <div class="tiny muted" style="margin-top:4px">${QTYPES[q.type].hint}</div></div>
+        <div class="field"><label>Можно пропустить?</label>
+          <select data-req="${i}"><option value="0" ${!q.required?'selected':''}>да, необязательный</option>
+          <option value="1" ${q.required?'selected':''}>нет, обязательный</option></select></div>
+      </div>
+      <div class="field"><label>Подсказка под вопросом <span class="muted">(необязательно)</span></label>
+        <input data-hint="${i}" value="${esc(q.hint||'')}" placeholder="Например: 2–3 предложения"></div>
+      ${extra}</div>`;
+  }).join('');
+  document.getElementById('qCount').textContent=plural(EDIT.questions.length,'вопрос','вопроса','вопросов')+' — кандидат ответит на них по ссылке';
+  list.querySelectorAll('[data-type]').forEach(s=>s.onchange=()=>{pullEditor();renderQuestions()});
+  list.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    pullEditor();EDIT.questions.splice(+b.dataset.del,1);
+    if(!EDIT.questions.length)EDIT.questions=[blankQuestion()];renderQuestions()});
+  list.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>{pullEditor();const i=+b.dataset.up;
+    [EDIT.questions[i-1],EDIT.questions[i]]=[EDIT.questions[i],EDIT.questions[i-1]];renderQuestions()});
+  list.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>{pullEditor();const i=+b.dataset.down;
+    [EDIT.questions[i+1],EDIT.questions[i]]=[EDIT.questions[i],EDIT.questions[i+1]];renderQuestions()});
+}
+
+function pullEditor(){
+  EDIT.title=document.getElementById('fTitle').value;
+  EDIT.description=document.getElementById('fDesc').value;
+  const sel=document.getElementById('fVacSel');
+  EDIT.vacancyId=sel.value;
+  EDIT.vacancyName=sel.value?sel.options[sel.selectedIndex].textContent:'';
+  EDIT.questions=EDIT.questions.map((q,i)=>{
+    const g=a=>document.querySelector(`[data-${a}="${i}"]`);
+    const type=g('type')?.value||q.type;
+    const out={...q,type,title:g('title')?.value||'',hint:g('hint')?.value||'',required:(g('req')?.value||'0')==='1'};
+    if(type==='one'||type==='many')out.options=(g('opts')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    if(type==='scale'){out.min=Number(g('min')?.value??1);out.max=Number(g('max')?.value??10)}
+    return out;
+  });
+}
+
+async function saveForm(status){
+  pullEditor();
+  const msg=document.getElementById('edMsg');
+  const say=(t,cls='')=>{msg.className='tiny '+cls;msg.textContent=t};
+  if(!EDIT.title.trim())return say('Впишите название анкеты','bad');
+  const empty=EDIT.questions.findIndex(q=>!q.title.trim());
+  if(empty>=0)return say(`Вопрос ${empty+1} без текста — впишите или удалите его`,'bad');
+  const badOpts=EDIT.questions.find(q=>(q.type==='one'||q.type==='many')&&(q.options||[]).length<2);
+  if(badOpts)return say(`У вопроса «${badOpts.title}» нужно минимум два варианта ответа`,'bad');
+
+  say('Сохраняем…');
+  try{
+    const body=JSON.stringify({...EDIT,status});
+    const res=EDIT.id
+      ?await api('forms/'+EDIT.id,{method:'PUT',headers:{'Content-Type':'application/json'},body})
+      :await api('forms',{method:'POST',headers:{'Content-Type':'application/json'},body});
+    FORMS=null;
+    if(status==='published'){
+      EDIT=null;await loadForms(true);
+      showLinkBanner(res.form.publicId);
+    }else{EDIT=null;await loadForms(true)}
+  }catch(e){say(e.message,'bad')}
+}
+
+function showLinkBanner(pid){
+  const root=document.getElementById('formsRoot');
+  const link=formLink(pid);
+  const el=document.createElement('div');
+  el.className='linkbanner';
+  el.innerHTML=`<div><b>Анкета опубликована.</b> Отправьте кандидату эту ссылку:</div>
+    <div class="linkbanner-row"><code>${esc(link)}</code>
+    <button class="mini" id="lbCopy">копировать</button>
+    <a class="mini" href="${esc(link)}" target="_blank">открыть</a></div>`;
+  root.prepend(el);
+  document.getElementById('lbCopy').onclick=()=>{navigator.clipboard.writeText(link);
+    document.getElementById('lbCopy').textContent='скопировано ✓'};
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+/* ---------- ЭКРАН 3: ответы ---------- */
+async function renderResponses(formId){
+  const root=document.getElementById('formsRoot');
+  const form=FORMS.find(f=>f.id===formId)||{title:'Анкета'};
+  root.innerHTML=`<button class="ghost back" id="back2">← К списку анкет</button>
+    <h1>${esc(form.title)}</h1><p class="sub">Ответы кандидатов</p><div class="loading">Загружаем…</div>`;
+  document.getElementById('back2').onclick=()=>goto('list');
+  try{
+    const {responses}=await api(`forms/${formId}/responses`);
+    const body=responses.length?responses.map(r=>`<div class="rcard">
+      <div class="rcard-head">
+        <div><div class="rcard-name">${esc(r.candidateName||'Имя не указано')}</div>
+          <div class="tiny muted">${new Date(r.submittedAt).toLocaleString('ru-RU',{day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'})}
+          ${r.candidatePhone?' · '+esc(r.candidatePhone):''}</div></div>
+        ${r.resumeUrl?`<a class="mini" href="${esc(r.resumeUrl)}" target="_blank">резюме на hh.ru ↗</a>`
+          :'<span class="pill pill-draft" title="Кандидат заполнил анкету по общей ссылке, без привязки к отклику">без привязки к HH</span>'}
+      </div>
+      ${(r.answers||[]).map(a=>`<div class="qa"><div class="qa-q">${esc(a.title)}</div>
+        <div class="qa-a">${esc(Array.isArray(a.value)?a.value.join(', '):a.value)||'<span class="muted">не ответил</span>'}</div></div>`).join('')}
+    </div>`).join(''):`<div class="fempty"><div class="fempty-icon">📭</div><h2>Ответов пока нет</h2>
+      <p class="muted">Как только кандидат заполнит анкету, ответ появится здесь.</p></div>`;
+    root.innerHTML=`<button class="ghost back" id="back3">← К списку анкет</button>
+      <h1>${esc(form.title)}</h1><p class="sub">${plural(responses.length,'ответ','ответа','ответов')}</p>${body}`;
+    document.getElementById('back3').onclick=()=>goto('list');
+  }catch(e){root.innerHTML+=`<div class="issue error">${esc(e.message)}</div>`}
+}
+
+/* ---------- ГЛАВНЫЙ ЭКРАН: ЧТО ДЕЛАТЬ СЕЙЧАС ----------
+   Список дел вместо приборной панели: число, что это значит и куда ведёт клик.
+   Всё, что не требует решения человека, сюда не попадает. */
+let TASKS=null, ANSWERS_OPEN=false;
+
+function todayView(){
+  return `<h1>Что делать сейчас</h1><p class="sub">Только то, где нужно ваше решение. Остальное бот делает сам.</p>
+  <div id="todayRoot"><div class="loading">Смотрю, что накопилось…</div></div>`;
+}
+
+async function loadToday(force){
+  const root=document.getElementById('todayRoot');
+  try{ TASKS=await api('tasks'+(force?'?refresh=1':'')); }
+  catch(e){ root.innerHTML=`<div class="issue error"><div class="issue-title">Не удалось собрать список дел</div>${esc(e.message)}</div>`; return }
+
+  const t=TASKS, items=[];
+  if(t.answers.length) items.push({n:t.answers.length,cls:'blue',
+    title:plural(t.answers.length,'ответ кандидата','ответа кандидатов','ответов кандидатов')+' ждут решения',
+    hint:'Прочитайте ответ и поставьте «Подходит» или «Отказ» — дальше бот сделает сам',act:'answers'});
+  if(t.anketaDecisions) items.push({n:t.anketaDecisions,cls:'warn',
+    title:plural(t.anketaDecisions,'анкета заполнена','анкеты заполнены','анкет заполнено')+', решения нет',
+    hint:'Кандидат прошёл анкету — нужно решить, звать ли на собеседование',act:'anketa'});
+  if(t.resumeChecks) items.push({n:t.resumeChecks,cls:'warn',
+    title:plural(t.resumeChecks,'резюме','резюме','резюме')+' на ручной проверке',
+    hint:'ИИ не смог решить сам — балл между 5 и 7',act:'resume'});
+  if(t.upcoming.length) items.push({n:t.upcoming.length,cls:'ok',
+    title:'Собеседования сегодня и завтра',
+    hint:t.upcoming.map(i=>`${i.today?'сегодня':'завтра'} ${i.time} — ${i.candidateFullName}`).join(' · '),act:'calendar'});
+
+  root.innerHTML=(items.length
+      ? items.map(i=>`<button class="task" data-act="${i.act}">
+          <div class="task-n ${i.cls}">${i.n}</div>
+          <div><div class="task-title">${esc(i.title)}</div><div class="task-hint">${esc(i.hint)}</div></div>
+          <div class="task-go">›</div></button>`).join('')
+      : `<div class="allclear"><div class="big">✓</div><h2>Всё разобрано</h2>
+         <p class="muted">Решений от вас сейчас не ждут.${t.upcomingTotal?` Ближайших собеседований впереди: ${t.upcomingTotal}.`:''}</p></div>`)
+    +`<div id="answersBox"></div>
+      <div class="toolbar" style="margin-top:18px"><button class="ghost" id="refreshToday">Обновить</button>
+      <span class="count tiny">${t.upcomingTotal?`впереди собеседований: ${t.upcomingTotal}`:''}</span></div>`;
+
+  document.getElementById('refreshToday').onclick=()=>{ANSWERS_OPEN=false;loadToday(true)};
+  root.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+    const a=b.dataset.act;
+    if(a==='answers'){ANSWERS_OPEN=!ANSWERS_OPEN;renderAnswers();return}
+    if(a==='calendar')return render('calendar');
+    goCandidates(a);
+  });
+  if(ANSWERS_OPEN)renderAnswers();
+}
+
+/* Ответы кандидатов показываем прямо здесь: решение ставится в таблице,
+   поэтому рядом с текстом даём ссылку на неё. */
+function renderAnswers(){
+  const box=document.getElementById('answersBox');
+  if(!ANSWERS_OPEN||!TASKS?.answers.length){box.innerHTML='';return}
+  box.innerHTML=`<div class="card" style="margin-top:14px">
+    <div class="card-head"><div><h2>Ответы кандидатов</h2>
+      <div class="tiny">Статус ставится в таблице, в колонке «Статус». Бот исполнит решение в течение 5 минут.</div></div></div>
+    <div class="table-scroll"><table><thead><tr>
+      <th style="width:20%">Кандидат</th><th style="width:44%">Что ответил</th><th style="width:18%">Вакансия</th><th>Когда</th>
+    </tr></thead><tbody>
+    ${TASKS.answers.map(a=>`<tr>
+      <td><div class="fio">${esc(a.fio||'без имени')}</div>
+        ${a.resumeUrl?`<a class="mini" href="${esc(a.resumeUrl)}" target="_blank">резюме ↗</a>`:''}</td>
+      <td style="white-space:pre-line">${esc(a.text)}</td>
+      <td class="tiny">${esc(a.vacancyName)}</td>
+      <td class="tiny">${esc(a.date||'—')}<br><a class="mini" href="${esc(a.sheetUrl)}" target="_blank">открыть таблицу ↗</a></td>
+    </tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+/* ---------- НАСТРОЙКИ: вакансии, анкеты, проверка системы в одном разделе ---------- */
+let SETTINGS_TAB='vacancies';
+function settingsView(){
+  return `<h1>Настройки</h1><p class="sub">Здесь настраивается работа бота. В повседневной работе сюда заходить не нужно.</p>
+  <div class="tabs">
+    <button data-tab="vacancies">Вакансии</button>
+    <button data-tab="forms">Анкеты</button>
+    <button data-tab="system">Проверка системы</button>
+  </div><div id="settingsBody"></div>`;
+}
+function renderSettingsTab(){
+  const body=document.getElementById('settingsBody');
+  document.querySelectorAll('.tabs [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===SETTINGS_TAB));
+  if(SETTINGS_TAB==='vacancies'){body.innerHTML=vacanciesView();loadVacancies()}
+  else if(SETTINGS_TAB==='forms'){body.innerHTML=formsView();SCREEN='list';loadForms()}
+  else{body.innerHTML=systemView();document.getElementById('runCheck').onclick=()=>loadSystem(true);loadSystem()}
+}
+function goSettings(tab){SETTINGS_TAB=tab;render('settings')}
+
+/* ---------- СОБЕСЕДОВАНИЯ ----------
+   Читаем тот же календарь, что ведёт бот. Экран только показывает: записать
+   встречу отсюда нельзя — иначе легко занять слот, который бот уже предложил. */
+let CAL=null,CAL_VAC='',CAL_PAST=false;
+
+function calendarView(){
+  return `<h1>Собеседования</h1><p class="sub">Кто и когда назначен. Данные из общего календаря — того же, куда записывает бот.</p>
+  <div class="toolbar">
+    <select id="calVac"><option value="">Все вакансии</option></select>
+    <label class="tiny" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="calPast"${CAL_PAST?' checked':''} style="min-width:auto;min-height:auto"> показывать прошедшие</label>
+    <button class="ghost" id="calRefresh">Обновить</button><span class="count" id="calCount"></span>
+  </div>
+  <div id="calRoot"><div class="loading">Загружаю календарь…</div></div>`;
+}
+
+async function loadCalendar(force){
+  const root=document.getElementById('calRoot');
+  try{
+    if(force||!CAL)CAL=await api('calendar');
+    const names=[...new Set(CAL.days.flatMap(d=>d.items.map(i=>i.vacancyName)))].sort((a,b)=>a.localeCompare(b,'ru'));
+    const sel=document.getElementById('calVac');
+    sel.innerHTML='<option value="">Все вакансии</option>'+names.map(n=>`<option${n===CAL_VAC?' selected':''}>${esc(n)}</option>`).join('');
+    renderCalendar();
+  }catch(e){root.innerHTML=`<div class="issue error"><div class="issue-title">Не удалось прочитать календарь</div>${esc(e.message)}</div>`}
+}
+
+function renderCalendar(){
+  const root=document.getElementById('calRoot');
+  const days=CAL.days
+    .map(d=>({...d,items:d.items.filter(i=>!CAL_VAC||i.vacancyName===CAL_VAC)}))
+    .filter(d=>d.items.length&&(CAL_PAST||!d.past));
+  const total=days.reduce((n,d)=>n+d.items.length,0);
+  const hidden=CAL.total-total;
+  document.getElementById('calCount').textContent=total?`${plural(total,'собеседование','собеседования','собеседований')}`:'';
+
+  if(!days.length){
+    root.innerHTML=`<div class="card"><div class="empty">${CAL_PAST?'Собеседований нет.':'Впереди собеседований нет.'}
+      ${hidden>0&&!CAL_PAST?`<div class="tiny" style="margin-top:8px">Прошедших встреч: ${hidden}. Включите «показывать прошедшие», чтобы увидеть их.</div>`:''}</div></div>`;
+    return;
+  }
+  root.innerHTML=days.map(d=>`
+    <div class="cal-day${d.today?' today':''}${d.past?' past':''}">
+      <div class="cal-date">${esc(humanDay(d))}${d.today?badge('сегодня','blue'):''}${isWeekendDay(d)?badge('выходной','warn'):''}</div>
+      ${d.items.map(i=>`<div class="cal-slot">
+        <div class="cal-time">${esc(i.time)}</div>
+        <div><div class="cal-who">${esc(i.candidateFullName)}</div><div class="cal-vac">${esc(i.vacancyName)}</div></div>
+        <div class="cal-links">
+          ${i.resumeUrl?`<a class="mini" href="${esc(i.resumeUrl)}" target="_blank">резюме ↗</a>`:''}
+          ${i.contactCandidate?`<span class="tiny">${esc(i.contactCandidate)}</span>`:''}
+        </div>
+      </div>`).join('')}
+    </div>`).join('')
+    +(hidden>0&&!CAL_PAST?`<div class="tiny" style="text-align:center;padding:6px">Скрыто прошедших встреч: ${hidden}</div>`:'');
+}
+
+const CAL_MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+function humanDay(d){const [,m,day]=d.sortKey.split('-').map(Number);return `${day} ${CAL_MONTHS[m-1]}, ${d.weekday}`}
+function isWeekendDay(d){return d.weekday==='суббота'||d.weekday==='воскресенье'}
+
+const views={today:todayView,overview:overviewView,candidates:candidatesView,calendar:calendarView,
+  settings:settingsView,system:systemView,vacancies:vacanciesView,forms:formsView};
+function render(view){
+  CURRENT=view;
+  // «Вакансии», «Анкеты» и «Проверка системы» живут внутри «Настроек» —
+  // старые переходы на них подсвечивают именно этот пункт меню.
+  const navView={vacancies:'settings',forms:'settings',system:'settings',overview:'today'}[view]||view;
+  document.querySelectorAll('nav a').forEach(a=>a.classList.toggle('active',a.dataset.view===navView));
+  app.innerHTML=(views[view]||todayView)();
+  if(view==='today')loadToday();
+  if(view==='settings'){
+    app.querySelectorAll('.tabs [data-tab]').forEach(b=>b.onclick=()=>{SETTINGS_TAB=b.dataset.tab;renderSettingsTab()});
+    renderSettingsTab();
+  }
+  if(view==='overview')loadOverview();
+  if(view==='candidates'&&CARD){return openCard(CARD)}
+  if(view==='candidates'){
+    document.getElementById('fVac').onchange=applyCandidateFilters;document.getElementById('fFlow').onchange=applyCandidateFilters;document.getElementById('fSearch').oninput=applyCandidateFilters;
+    document.getElementById('btnRefresh').onclick=()=>{CANDS=[];loadCandidatesView(true)};loadCandidatesView();
+  }
+  if(view==='calendar'){
+    document.getElementById('calVac').onchange=e=>{CAL_VAC=e.target.value;renderCalendar()};
+    document.getElementById('calPast').onchange=e=>{CAL_PAST=e.target.checked;renderCalendar()};
+    document.getElementById('calRefresh').onclick=()=>loadCalendar(true);
+    loadCalendar();
+  }
+  if(view==='system'){document.getElementById('runCheck').onclick=()=>loadSystem(true);loadSystem()}
+  if(view==='vacancies'){loadVacancies()}
+  if(view==='forms'){SCREEN='list';loadForms()}
+}
+document.querySelectorAll('nav a').forEach(a=>a.onclick=()=>render(a.dataset.view));
+fetch('api/health').then(r=>r.json()).then(()=>{document.getElementById('dot').className='dot ok';document.getElementById('serverText').textContent='панель на связи'}).catch(()=>{document.getElementById('dot').className='dot err';document.getElementById('serverText').textContent='нет связи'});
+/* Ссылка из Telegram: /hr/?card=<vacancyId>:<resumeId> — открываем сразу карточку
+   кандидата, чтобы не искать его руками в общем списке. */
+async function openCardFromUrl(){
+  const q=new URLSearchParams(location.search).get('card');
+  if(!q||!q.includes(':'))return false;
+  const [vacancyId,resumeId]=q.split(':');
+  try{
+    await ensureCandidates();
+    const c=CANDS.find(x=>String(x.vacancyId)===vacancyId&&String(x.resumeId)===resumeId);
+    if(!c){alert('Кандидат не найден в списке — возможно, отклик уже в архиве.');return false}
+    CARD=c;render('candidates');return true;
+  }catch(e){console.warn('card link:',e.message);return false}
+}
+(async()=>{if(await checkSession()){if(!await openCardFromUrl())render('today')}})();
+</script>
+</body>
+</html>

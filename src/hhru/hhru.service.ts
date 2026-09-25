@@ -1,6 +1,9 @@
-import { sheets } from "../google/sheets.client";
 import { processVacancyResponses } from "./process-responses";
 import { processVacancyQuestionnaire, type QuestionnaireSummary } from "./questionnaire";
+import { processCandidateAnswers } from "./candidate-answers";
+import { listTrackedVacancies } from "../chat-sim/vacancies";
+import { withHhAccount } from "../hh-auth/account-context";
+import { isRuntimeVacancyStopped } from "./vacancy-activity";
 
 // Блокировка от параллельных запусков обработки откликов
 let hhruBusy = false;
@@ -16,16 +19,22 @@ export async function processAllQuestionnaires(filter?: string): Promise<{ vacan
     if (anketaBusy) throw new Error("ANKETA_BUSY");
     anketaBusy = true;
     try {
-        let vacancies = await getTrackedVacancies();
+        let vacancies = (await listTrackedVacancies()).filter((v) => v.workflow === "questionnaire");
         if (filter) vacancies = vacancies.filter((v) => v.vacancyName.toLowerCase().includes(filter.toLowerCase()));
         const out: { vacancyName: string; summary: QuestionnaireSummary }[] = [];
         for (const v of vacancies) {
+            if (isRuntimeVacancyStopped(v.vacancyId)) {
+                console.log(`[anketa] «${v.vacancyName}» приостановлена — пропуск`);
+                continue;
+            }
             try {
-                const summary = await processVacancyQuestionnaire({
-                    vacancyId: v.vacancyId,
-                    vacancyName: v.vacancyName,
-                    templatesUrl: v.templatesUrl,
-                });
+                const summary = await withHhAccount(v.hhAccountId, () =>
+                    processVacancyQuestionnaire({
+                        vacancyId: v.vacancyId,
+                        vacancyName: v.vacancyName,
+                        templatesUrl: v.templatesUrl,
+                    })
+                );
                 out.push({ vacancyName: v.vacancyName, summary });
             } catch (e: any) {
                 console.error(`[anketa] ошибка "${v.vacancyName}": ${e.message}`);
@@ -41,54 +50,43 @@ export async function processAllQuestionnaires(filter?: string): Promise<{ vacan
     }
 }
 
-const spreadsheetId = process.env.GOOGLE_SHEETS_ID_VACANCIES;
-const range = "Лист1!A:D";
-
-interface TrackedVacancy {
-    vacancyName: string;
-    hhUrl: string;
-    vacancyId: string;
-    templatesUrl: string | null;
-    responsible: string;
-}
-
-async function getTrackedVacancies(): Promise<TrackedVacancy[]> {
-    if (!spreadsheetId) throw new Error("GOOGLE_SHEETS_ID_VACANCIES не указан в .env");
-
-    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-    const rows = response.data.values || [];
-
-    return rows
-        .map((row) => ({
-            vacancyName: String(row[0] || "").trim(),
-            hhUrl: String(row[1] || "").trim(),
-            templatesUrl: String(row[2] || "").trim(),
-            responsible: String(row[3] || "").trim(),
-        }))
-        // вакансия активна, только если заполнены ВСЕ колонки (название, ссылка HH, шаблоны, ответственный)
-        .filter((v) => {
-            const allFilled = v.vacancyName && v.hhUrl && v.templatesUrl && v.responsible;
-            if (!allFilled) return false;
-            if (!v.hhUrl.includes("hh.ru/vacancy/")) return false;
-            return true;
-        })
-        .map((v) => ({
-            vacancyName: v.vacancyName,
-            hhUrl: v.hhUrl,
-            templatesUrl: v.templatesUrl,
-            responsible: v.responsible,
-            vacancyId: extractVacancyId(v.hhUrl),
-        }))
-        .filter((v) => v.vacancyId !== "");
-}
-
-function extractVacancyId(url: string): string {
-    const match = url.match(/\/vacancy\/(\d+)/);
-    return match ? match[1] : "";
+/**
+ * Решения HR из листа «Ответы кандидатов» по всем вакансиям.
+ * У вакансий без этого листа ветка молчит — там отбор идёт по анкете.
+ */
+export async function processAllCandidateAnswers(): Promise<{ invited: number; rejected: number; skipped: number }> {
+    const totals = { invited: 0, rejected: 0, skipped: 0 };
+    for (const v of (await listTrackedVacancies()).filter((item) => item.workflow === "chat_question")) {
+        if (isRuntimeVacancyStopped(v.vacancyId)) {
+            console.log(`[answers] «${v.vacancyName}» приостановлена — пропуск`);
+            continue;
+        }
+        try {
+            const r = await withHhAccount(v.hhAccountId, () =>
+                processCandidateAnswers({
+                    vacancyId: v.vacancyId,
+                    vacancyName: v.vacancyName,
+                    templatesUrl: v.templatesUrl,
+                })
+            );
+            if (!r.checked) continue;
+            totals.invited += r.invited;
+            totals.rejected += r.rejected;
+            totals.skipped += r.skipped;
+            if (r.invited || r.rejected || r.skipped) {
+                console.log(`[answers] «${v.vacancyName}»: приглашений ${r.invited}, отказов ${r.rejected}, пропущено ${r.skipped}`);
+            }
+        } catch (e: any) {
+            console.error(`[answers] ошибка по «${v.vacancyName}»: ${e.message}`);
+        }
+    }
+    return totals;
 }
 
 export interface VacancyN8nResult {
     vacancyName: string;
+    hhAccountId: string;
+    hhAccountEmail: string;
     success: boolean;
     data?: {
         vacancy_id: string;
@@ -120,7 +118,7 @@ export async function sendVacanciesToN8n(filter?: string): Promise<VacancyN8nRes
     const useLocal = process.env.USE_LOCAL_PROCESSING === "true";
     const dryRun = process.env.HHRU_DRY_RUN !== "false"; // по умолчанию dry-run
 
-    let vacancies = await getTrackedVacancies();
+    let vacancies = await listTrackedVacancies();
 
     if (vacancies.length === 0) {
         console.log("[hhru] нет вакансий с ссылками на HH.ru");
@@ -146,15 +144,33 @@ export async function sendVacanciesToN8n(filter?: string): Promise<VacancyN8nRes
         const results: VacancyN8nResult[] = [];
         try {
             for (const vacancy of vacancies) {
+                if (isRuntimeVacancyStopped(vacancy.vacancyId)) {
+                    console.log(`[hhru] «${vacancy.vacancyName}» приостановлена во время прохода — пропуск`);
+                    continue;
+                }
                 try {
-                    const data = await processVacancyResponses(
-                        { vacancyId: vacancy.vacancyId, vacancyName: vacancy.vacancyName, templatesUrl: vacancy.templatesUrl },
-                        { dryRun }
+                    const data = await withHhAccount(vacancy.hhAccountId, () =>
+                        processVacancyResponses(
+                            { vacancyId: vacancy.vacancyId, vacancyName: vacancy.vacancyName, templatesUrl: vacancy.templatesUrl },
+                            { dryRun }
+                        )
                     );
-                    results.push({ vacancyName: vacancy.vacancyName, success: true, data });
+                    results.push({
+                        vacancyName: vacancy.vacancyName,
+                        hhAccountId: vacancy.hhAccountId,
+                        hhAccountEmail: vacancy.hhAccountEmail,
+                        success: true,
+                        data,
+                    });
                 } catch (err: any) {
                     console.error(`[hhru] локальная ошибка "${vacancy.vacancyName}":`, err.message);
-                    results.push({ vacancyName: vacancy.vacancyName, success: false, error: err.message });
+                    results.push({
+                        vacancyName: vacancy.vacancyName,
+                        hhAccountId: vacancy.hhAccountId,
+                        hhAccountEmail: vacancy.hhAccountEmail,
+                        success: false,
+                        error: err.message,
+                    });
                 }
             }
         } finally {
@@ -174,6 +190,10 @@ export async function sendVacanciesToN8n(filter?: string): Promise<VacancyN8nRes
     const results: VacancyN8nResult[] = [];
 
     for (const vacancy of vacancies) {
+        if (isRuntimeVacancyStopped(vacancy.vacancyId)) {
+            console.log(`[hhru] «${vacancy.vacancyName}» приостановлена во время прохода — не отправляю в n8n`);
+            continue;
+        }
         const payload = {
             vacancyId: vacancy.vacancyId,
             vacancyUrl: vacancy.hhUrl,
@@ -190,15 +210,33 @@ export async function sendVacanciesToN8n(filter?: string): Promise<VacancyN8nRes
 
             if (!response.ok) {
                 console.error(`[hhru] n8n вернул ${response.status} для вакансии "${vacancy.vacancyName}"`);
-                results.push({ vacancyName: vacancy.vacancyName, success: false, error: `HTTP ${response.status}` });
+                results.push({
+                    vacancyName: vacancy.vacancyName,
+                    hhAccountId: vacancy.hhAccountId,
+                    hhAccountEmail: vacancy.hhAccountEmail,
+                    success: false,
+                    error: `HTTP ${response.status}`,
+                });
             } else {
                 const data = await response.json() as VacancyN8nResult["data"];
                 console.log(`[hhru] обработано: "${vacancy.vacancyName}"`);
-                results.push({ vacancyName: vacancy.vacancyName, success: true, data });
+                results.push({
+                    vacancyName: vacancy.vacancyName,
+                    hhAccountId: vacancy.hhAccountId,
+                    hhAccountEmail: vacancy.hhAccountEmail,
+                    success: true,
+                    data,
+                });
             }
         } catch (err: any) {
             console.error(`[hhru] ошибка отправки "${vacancy.vacancyName}":`, err);
-            results.push({ vacancyName: vacancy.vacancyName, success: false, error: err.message });
+            results.push({
+                vacancyName: vacancy.vacancyName,
+                hhAccountId: vacancy.hhAccountId,
+                hhAccountEmail: vacancy.hhAccountEmail,
+                success: false,
+                error: err.message,
+            });
             continue;
         }
 

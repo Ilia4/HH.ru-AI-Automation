@@ -15,6 +15,7 @@ export interface PendingQa {
     messagesUrl: string;
     vacancyName: string;
     spreadsheetId: string;
+    hhAccountId?: string;
     candidateQuestion: string;
     tgChatId: string;
     tgThreadId: number | null;

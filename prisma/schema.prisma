@@ -28,8 +28,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  activeVacancies         ActiveVacancy[]
+  activeVacancies        ActiveVacancy[]
   interviewNotifications InterviewNotification[]
+  hhOAuthSessions        HhOAuthSession[]
 }
 
 model InterviewNotification {
@@ -69,10 +70,14 @@ model InterviewNotification {
 model ActiveVacancy {
   id Int @id @default(autoincrement())
 
-  vacancyName String @unique
-  vacancyUrl  String?
-  templatesUrl String?
+  vacancyName         String  @unique
+  vacancyUrl          String?
+  templatesUrl        String?
   responsibleUsername String
+  vacancyId           String?
+
+  hhAccountId String?
+  hhAccount   HhAccount? @relation(fields: [hhAccountId], references: [id])
 
   responsibleUserId Int?
   responsibleUser   User? @relation(fields: [responsibleUserId], references: [id])
@@ -85,4 +90,157 @@ model ActiveVacancy {
   updatedAt DateTime @updatedAt
 
   interviewNotifications InterviewNotification[]
+
+  @@index([hhAccountId])
+}
+
+model HhAccount {
+  id String @id @default(cuid())
+
+  email        String  @unique
+  hhUserId     String?
+  managerId    String?
+  employerId   String?
+  employerName String?
+
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String
+  expiresAt             DateTime
+
+  status        String    @default("active")
+  lastCheckedAt DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+  lastErrorAt   DateTime?
+  createdByTgId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  activeVacancies ActiveVacancy[]
+
+  @@index([status])
+  @@index([employerId])
+}
+
+model HhOAuthSession {
+  id String @id @default(cuid())
+
+  state          String    @unique
+  telegramChatId String
+  telegramUserId String
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id])
+
+  @@index([expiresAt])
+}
+
+model CandidateStageState {
+  id             Int      @id @default(autoincrement())
+  negotiationId  String   @unique
+  vacancyId      String
+  hhAccountId    String?
+  vacancyName    String
+  candidateName  String
+  stage          String
+  stageName      String
+  firstSeenAt    DateTime @default(now())
+  stageChangedAt DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  @@index([vacancyId])
+  @@index([hhAccountId])
+  @@index([stage])
+}
+
+model VacancyStageCurrent {
+  vacancyId   String
+  hhAccountId String?
+  vacancyName String
+  stage       String
+  stageName   String
+  count       Int
+  updatedAt   DateTime @updatedAt
+
+  @@id([vacancyId, stage])
+}
+
+model VacancyStageSnapshot {
+  id          Int      @id @default(autoincrement())
+  vacancyId   String
+  hhAccountId String?
+  vacancyName String
+  stage       String
+  stageName   String
+  count       Int
+  capturedAt  DateTime @default(now())
+
+  @@index([vacancyId, capturedAt])
+  @@index([hhAccountId])
+}
+
+model Form {
+  id          String   @id
+  publicId    String   @unique
+  title       String
+  description String?
+  vacancyId   String?
+  vacancyName String?
+  questions   Json     @default("[]")
+  status      String   @default("draft")
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
+
+  responses FormResponse[]
+  invites   FormInvite[]
+
+  @@index([vacancyId])
+  @@index([status])
+}
+
+model FormResponse {
+  id             String   @id
+  formId         String
+  candidateToken String?
+  negotiationId  String?
+  resumeId       String?
+  candidateName  String?
+  candidatePhone String?
+  answers        Json     @default("[]")
+  consent        Boolean  @default(false)
+  ip             String?
+  submittedAt    DateTime @default(now())
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([negotiationId])
+  @@index([candidateToken])
+  @@index([submittedAt])
+}
+
+model FormInvite {
+  token          String    @id
+  formId         String
+  negotiationId  String?
+  resumeId       String?
+  vacancyId      String?
+  vacancyName    String?
+  hhAccountId    String?
+  candidateName  String?
+  candidatePhone String?
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime?
+  usedAt         DateTime?
+  responseId     String?
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+  @@index([negotiationId])
+  @@index([vacancyId])
 }

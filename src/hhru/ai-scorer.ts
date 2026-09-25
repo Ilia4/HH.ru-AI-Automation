@@ -12,6 +12,7 @@ export interface AiResult {
     ai_comment: string;
     score: number | "";
     status: string; // "Подходит" | "Ручная проверка" | "Отказ" | "Ошибка"
+    filter_results: { number: number; matched: boolean; reason: string }[];
 }
 
 /** Достаёт текст ответа ИИ из разных возможных форматов */
@@ -106,5 +107,12 @@ export async function scoreCandidate(prompt: string): Promise<AiResult> {
         ai_comment: ai.ai_comment || "Комментарий не указан",
         score,
         status,
+        filter_results: Array.isArray(ai.filter_results)
+            ? ai.filter_results.map((item: any) => ({
+                number: Number(item?.number),
+                matched: item?.matched === true || String(item?.matched).toLowerCase() === "true",
+                reason: String(item?.reason || ""),
+            })).filter((item: any) => Number.isInteger(item.number) && item.number > 0)
+            : [],
     };
 }

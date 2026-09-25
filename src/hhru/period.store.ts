@@ -5,6 +5,7 @@ const STORE_PATH = path.resolve(process.cwd(), "period-stats.json");
 
 export interface VacancyPeriodStats {
     period_start: string;
+    hh_account_email?: string;
     new_total: number;
     passed: number;
     manual: number;
@@ -33,13 +34,14 @@ function save(data: StoreData) {
 export function accumulateResult(vacancyName: string, data: {
     new_responses?: { has_new_responses: boolean; total: number; passed_count: number; manual_count: number; failed_count: number };
     manual_check?: { checked: boolean; processed_total: number; accepted_count: number; rejected_count: number };
-}) {
+}, hhAccountEmail?: string) {
     const store = load();
     const now = new Date().toISOString();
 
     if (!store[vacancyName]) {
         store[vacancyName] = {
             period_start: now,
+            hh_account_email: hhAccountEmail,
             new_total: 0,
             passed: 0,
             manual: 0,
@@ -52,6 +54,7 @@ export function accumulateResult(vacancyName: string, data: {
     }
 
     const s = store[vacancyName];
+    if (hhAccountEmail) s.hh_account_email = hhAccountEmail;
     s.runs += 1;
 
     if (data.new_responses?.has_new_responses) {
@@ -74,12 +77,34 @@ export function getPeriodStats(): StoreData {
     return load();
 }
 
-export function resetPeriodStats() {
+/** Удаляет накопленную сводку одной вакансии сразу после её остановки. */
+export function removePeriodStats(vacancyName: string) {
+    const key = String(vacancyName || "").trim();
+    if (!key) return;
+    const store = load();
+    if (!(key in store)) return;
+    delete store[key];
+    save(store);
+}
+
+/**
+ * Начинает новый отчётный период. Если передан актуальный список вакансий,
+ * старые/остановленные ключи полностью удаляются, а не остаются вечными нулями.
+ */
+export function resetPeriodStats(activeVacancyNames?: Iterable<string>) {
     const store = load();
     const now = new Date().toISOString();
+    const active = activeVacancyNames
+        ? new Set(Array.from(activeVacancyNames, (name) => String(name || "").trim()))
+        : null;
     for (const key of Object.keys(store)) {
+        if (active && !active.has(key)) {
+            delete store[key];
+            continue;
+        }
         store[key] = {
             period_start: now,
+            hh_account_email: store[key].hh_account_email,
             new_total: 0,
             passed: 0,
             manual: 0,

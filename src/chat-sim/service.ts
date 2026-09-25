@@ -164,7 +164,9 @@ export function registerTelegramQaReplyHandler(bot: Bot<Context>) {
         }
 
         try {
-            const appendResult = await appendVacancyQa(pending.spreadsheetId, pending.candidateQuestion, answer);
+            const appendResult = process.env.QA_AUTOSAVE === "true"
+                ? await appendVacancyQa(pending.spreadsheetId, pending.candidateQuestion, answer)
+                : { appended: false as boolean, duplicateQuestion: undefined as string | undefined };
             resolvePendingReply(pending.id, answer);
             appendSessionMessage(pending.sessionId, "assistant", "human", answer);
 

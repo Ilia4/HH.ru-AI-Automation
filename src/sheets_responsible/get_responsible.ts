@@ -1,50 +1,33 @@
-import { sheets } from "../google/sheets.client";
-import type { VacancyGSTable } from "../types";
 import { prisma } from "../lib/prisma.js";
-
-const spreadsheetId = process.env.GOOGLE_SHEETS_ID_VACANCIES;
-const range = process.env.GOOGLE_SHEETS_RANGE_VACANCIES;
-
-async function getActiveVacanciesFromGS(): Promise<VacancyGSTable[]> {
-    if (!spreadsheetId) throw new Error("GOOGLE_SHEETS_ID_VACANCIES не указан в .env");
-    if (!range) throw new Error("GOOGLE_SHEETS_RANGE_VACANCIES не указан в .env");
-
-    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-    const rows = response.data.values || [];
-
-    return rows
-        .map((row) => ({
-            vacancyName: String(row[0] || "").trim(),
-            vacancyUrl: String(row[1] || "").trim() || null,
-            templatesUrl: String(row[2] || "").trim() || null,
-            responsibleUsername: String(row[3] || "").trim().replace("@", "").toLowerCase(),
-        }))
-        .filter((v) => v.vacancyName && v.responsibleUsername);
-}
+import { listTrackedVacancies } from "../chat-sim/vacancies";
 
 export async function syncActiveVacancies() {
-    const vacancies = await getActiveVacanciesFromGS();
+    const vacancies = await listTrackedVacancies();
     const namesFromSheet = vacancies.map((v) => v.vacancyName);
 
     for (const vacancy of vacancies) {
         const responsibleUser = await prisma.user.findUnique({
-            where: { username: vacancy.responsibleUsername },
+            where: { username: vacancy.responsible.replace("@", "").toLowerCase() },
         });
 
         const saved = await prisma.activeVacancy.upsert({
             where: { vacancyName: vacancy.vacancyName },
             update: {
-                vacancyUrl: vacancy.vacancyUrl,
+                vacancyUrl: vacancy.hhUrl,
                 templatesUrl: vacancy.templatesUrl,
-                responsibleUsername: vacancy.responsibleUsername,
+                vacancyId: vacancy.vacancyId,
+                hhAccountId: vacancy.hhAccountId,
+                responsibleUsername: vacancy.responsible.replace("@", "").toLowerCase(),
                 responsibleUserId: responsibleUser?.id ?? null,
                 isActive: true,
             },
             create: {
                 vacancyName: vacancy.vacancyName,
-                vacancyUrl: vacancy.vacancyUrl,
+                vacancyUrl: vacancy.hhUrl,
                 templatesUrl: vacancy.templatesUrl,
-                responsibleUsername: vacancy.responsibleUsername,
+                vacancyId: vacancy.vacancyId,
+                hhAccountId: vacancy.hhAccountId,
+                responsibleUsername: vacancy.responsible.replace("@", "").toLowerCase(),
                 responsibleUserId: responsibleUser?.id ?? null,
                 isActive: true,
             },

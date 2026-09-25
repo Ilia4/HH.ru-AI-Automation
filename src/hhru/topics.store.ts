@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { listTrackedVacancies } from "../chat-sim/vacancies";
 
 const STORE_PATH = path.resolve(process.cwd(), "topics.json");
 
@@ -42,4 +43,28 @@ export async function findThreadId(_bot: unknown, vacancyName: string): Promise<
 
 export function listTopics(): TopicsMap {
     return load();
+}
+
+/**
+ * Какой вакансии принадлежит тема Telegram.
+ * Сопоставляем по названию: в topics.json лежит «название вакансии → thread_id».
+ */
+export async function vacancyByThread(
+    threadId: number | undefined | null,
+): Promise<{ vacancyId: string; vacancyName: string } | null> {
+    if (threadId === undefined || threadId === null) return null;
+    const topics = load();
+    let vacs: Awaited<ReturnType<typeof listTrackedVacancies>> = [];
+    try { vacs = await listTrackedVacancies(); } catch { return null; }
+
+    const norm = (x: string) => String(x || "").toLowerCase().trim();
+    for (const v of vacs) {
+        let tid = topics[v.vacancyName];
+        if (tid === undefined) {
+            const key = Object.keys(topics).find((k) => norm(k) === norm(v.vacancyName));
+            if (key) tid = topics[key];
+        }
+        if (tid === threadId) return { vacancyId: v.vacancyId, vacancyName: v.vacancyName };
+    }
+    return null;
 }

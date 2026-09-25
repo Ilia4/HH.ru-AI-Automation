@@ -13,13 +13,26 @@ topics.json
 chat-router-state.json
 interview-chat-state.json
 chat-sim-state.json
+questionnaire-processed.json
+questionnaire-processed.json.tmp-*
 hh-refresh.lock
+hh-refresh-*.lock
+token-monitor-state.json
 *.log
 
 # ─── Бэкапы и временные архивы ──────────────────────────────
 src.bak_*/
+server-sync-backup_*/
+server-backups/
+server-panel-audit/
+*.bak
+*.bak_*
+*.bak[0-9]*
 *.tgz
 *.tar.gz
+
+# ─── Отдельная лаборатория сообщений ───────────────────────
+message-design-lab/.env
 
 # ─── Prisma generated ───────────────────────────────────────
 /src/generated/prisma

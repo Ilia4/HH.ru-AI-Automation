@@ -6,6 +6,11 @@ export type InterviewChatStatus =
     | "waiting_human_reply"
     | "waiting_candidate_confirmation"
     | "scheduled"
+    | "confirm_requested"
+    | "awaiting_candidate_confirm"
+    | "awaiting_hr_cancel_text"
+    | "confirmed"
+    | "completed"
     | "closed";
 
 export interface InterviewSlotProposal {
@@ -13,8 +18,15 @@ export interface InterviewSlotProposal {
     time: string;
 }
 
+export interface InterviewTelegramContext {
+    candidateMessage: string;
+    candidateProposedSlot?: InterviewSlotProposal | null;
+    createdAt: string;
+}
+
 export interface InterviewChatState {
     negotiationId: string;
+    hhAccountId?: string;
     vacancyId: string;
     vacancyName: string;
     spreadsheetId: string;
@@ -29,10 +41,24 @@ export interface InterviewChatState {
     pendingTelegramChatId?: string;
     pendingTelegramThreadId?: number | null;
     pendingTelegramMessageId?: number;
+    /**
+     * Все карточки по кандидату, а не только последняя. Кандидат может написать
+     * повторно («всё в силе?»), бот пришлёт новую карточку — и ответ на прежнюю
+     * раньше терялся молча, потому что хранился один message_id.
+     */
+    pendingTelegramMessageIds?: number[];
+    /** Контекст каждой карточки: reply на старую карточку не должен брать новый слот. */
+    pendingTelegramContexts?: Record<string, InterviewTelegramContext>;
     candidateLastMessage?: string;
     candidateProposedSlot?: InterviewSlotProposal | null;
     employerProposedSlot?: InterviewSlotProposal | null;
     scheduledSlot?: InterviewSlotProposal | null;
+    confirmationRequestedAt?: string;
+    confirmTgMessageId?: number;
+    cancelPromptTgChatId?: string;
+    cancelPromptTgMessageId?: number;
+    forwardTgChatId?: string;
+    forwardedTgMessageIds?: number[];
 }
 
 interface StoreData {
@@ -97,15 +123,42 @@ export function updateInterviewChatState(
 export function listActiveInterviewChatStates(): InterviewChatState[] {
     const store = loadStore();
     return Object.values(store.items).filter((item) =>
-        item.status !== "scheduled" && item.status !== "closed"
+        item.status !== "scheduled" && item.status !== "completed" && item.status !== "closed"
     );
+}
+
+// Для чат-роутера: слушаем и уже назначенных (scheduled) — чтобы отвечать на их вопросы
+// до встречи. Не слушаем только закрытые диалоги.
+export function listOpenInterviewChatStates(): InterviewChatState[] {
+    const store = loadStore();
+    return Object.values(store.items).filter((item) => item.status !== "closed");
 }
 
 export function findInterviewChatByTelegramMessage(chatId: string, messageId: number): InterviewChatState | null {
     const store = loadStore();
     return Object.values(store.items).find((item) =>
         item.pendingTelegramChatId === chatId &&
-        item.pendingTelegramMessageId === messageId &&
+        (item.pendingTelegramMessageId === messageId ||
+            (item.pendingTelegramMessageIds || []).includes(messageId)) &&
         item.status === "waiting_human_reply"
+    ) ?? null;
+}
+
+export function findInterviewChatByCancelPrompt(chatId: string, messageId: number): InterviewChatState | null {
+    const store = loadStore();
+    return Object.values(store.items).find((item) =>
+        item.cancelPromptTgChatId === chatId &&
+        item.cancelPromptTgMessageId === messageId &&
+        item.status === "awaiting_hr_cancel_text"
+    ) ?? null;
+}
+
+// Найти диалог по id пересланного в тему сообщения кандидата (💬) — чтобы reply HR ушёл кандидату.
+export function findInterviewChatByForwardedMessage(chatId: string, messageId: number): InterviewChatState | null {
+    const store = loadStore();
+    return Object.values(store.items).find((item) =>
+        item.forwardTgChatId === chatId &&
+        Array.isArray(item.forwardedTgMessageIds) &&
+        item.forwardedTgMessageIds.includes(messageId)
     ) ?? null;
 }
